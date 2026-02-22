@@ -85,14 +85,18 @@ export const RecordsView = defineComponent({
       if (!uploadForm.file)          { showToast('Please select a file', 'error'); return; }
       if (!uploadForm.title)         { showToast('Title is required', 'error'); return; }
       if (!uploadForm.commitMessage) { showToast('Commit message is required', 'error'); return; }
+      if (uploadForm.commitMessage.trim().length < 5) {
+        showToast('Commit message must be at least 5 characters', 'error');
+        return;
+      }
 
       uploading.value = true;
       try {
         const fd = new FormData();
         fd.append('file',          uploadForm.file);
-        fd.append('title',         uploadForm.title);
+        fd.append('title',         uploadForm.title.trim());
         fd.append('recordType',    uploadForm.recordType);
-        fd.append('commitMessage', uploadForm.commitMessage);
+        fd.append('commitMessage', uploadForm.commitMessage.trim());
         fd.append('issuedBy',      uploadForm.issuedBy);
         fd.append('issuedDate',    uploadForm.issuedDate);
         if (uploadForm.tags) {
@@ -115,6 +119,14 @@ export const RecordsView = defineComponent({
       }
     }
 
+    async function downloadLatestRecord(record) {
+      if (!record?.currentVersionId) {
+        showToast('Latest version not available', 'error');
+        return;
+      }
+      await downloadVersion(record.id, record.currentVersionId);
+    }
+
     async function deleteRecord(record) {
       if (!confirm(`Delete "${record.title}"? This cannot be undone.`)) return;
       try {
@@ -131,7 +143,7 @@ export const RecordsView = defineComponent({
       loadingVersions, selectedRecord, versions, dragOver, fileInput, uploadForm,
       RECORD_TYPES, TYPE_ICONS,
       viewVersions, downloadVersion, handleFileChange, handleDrop, submitUpload,
-      deleteRecord, relativeTime, formatBytes,
+      downloadLatestRecord, deleteRecord, relativeTime, formatBytes,
     };
   },
 
@@ -206,7 +218,10 @@ export const RecordsView = defineComponent({
 
               <div class="flex items-center gap-2 mt-3">
                 <button @click="viewVersions(record)" class="btn-ghost text-xs py-1.5 px-3 mono">
-                  ⊞ {{ record.currentVersion }} version{{ record.currentVersion !== 1 ? 's' : '' }}
+                  ⊞ {{ record.currentVersion }} histor{{ record.currentVersion !== 1 ? 'ies' : 'y' }}
+                </button>
+                <button @click="downloadLatestRecord(record)" class="btn-ghost text-xs py-1.5 px-3 mono">
+                  ↓ Download Latest
                 </button>
                 <button @click="deleteRecord(record)" class="btn-danger text-xs py-1.5 px-3">
                   ⊗ Delete
@@ -301,7 +316,7 @@ export const RecordsView = defineComponent({
         <div class="modal animate-slide-up" style="max-width: 580px">
           <div class="flex items-center justify-between mb-6">
             <div>
-              <h2 class="serif text-xl text-ink-100">Version History</h2>
+              <h2 class="serif text-xl text-ink-100">History</h2>
               <p class="mono text-xs text-ink-500 mt-0.5 truncate max-w-xs">{{ selectedRecord?.title }}</p>
             </div>
             <button @click="showVersionModal = false" class="text-ink-600 hover:text-ink-300 text-xl">×</button>
@@ -317,7 +332,7 @@ export const RecordsView = defineComponent({
             </div>
           </div>
 
-          <div v-else-if="versions.length === 0" class="text-center py-8 text-ink-600">No versions found</div>
+          <div v-else-if="versions.length === 0" class="text-center py-8 text-ink-600">No history found</div>
 
           <div v-else class="space-y-0 relative">
             <div class="absolute left-[3px] top-2 bottom-2 w-px bg-ink-800"></div>

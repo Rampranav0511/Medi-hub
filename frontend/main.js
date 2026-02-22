@@ -8,7 +8,7 @@
 //   - If Firebase is NOT configured, the app shows a setup notice on the login page.
 
 import { router }   from './router.js';
-import { appState, clearAuth } from './services/state.js';
+import { appState, clearAuth, setAuth } from './services/state.js';
 import api          from './services/api.js';
 
 const { createApp, onMounted } = Vue;
@@ -62,6 +62,20 @@ const App = {
       // (useful for development without Firebase)
 
       if (!appState.token) return;
+
+      // Always hydrate user/profile from backend so pages can load data
+      // even when localStorage user is stale or missing.
+      try {
+        const me = await api.get('/auth/me');
+        const user = me.user || {};
+        const profile = me.profile || {};
+        const role = user.role || profile.role;
+        if (role && user.uid) {
+          setAuth(appState.token, { ...user, ...profile, role });
+        }
+      } catch (e) {
+        console.warn('[main] Could not hydrate /auth/me:', e.message);
+      }
 
       // Initial unread count
       try {

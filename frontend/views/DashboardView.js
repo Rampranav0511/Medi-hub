@@ -3,7 +3,7 @@ import api from '../services/api.js';
 import { appState, showToast } from '../services/state.js';
 import { relativeTime } from '../utils/time.js';
 
-const { ref, onMounted, defineComponent } = Vue;
+const { ref, onMounted, computed, defineComponent } = Vue;
 const { useRouter } = VueRouter;
 
 export const DashboardView = defineComponent({
@@ -14,6 +14,27 @@ export const DashboardView = defineComponent({
     const recentActivity = ref([]);
     const loading        = ref(true);
     const isPatient      = appState.user?.role === 'patient';
+    const activityQuery  = ref('');
+
+    const previousDayCutoffMs = (() => {
+      const startOfToday = new Date();
+      startOfToday.setHours(0, 0, 0, 0);
+      return startOfToday.getTime() - 1;
+    })();
+
+    const previousDayLabel = new Date(previousDayCutoffMs).toLocaleDateString('en-IN', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    });
+
+    function toMillis(ts) {
+      if (!ts) return 0;
+      if (ts.seconds !== undefined) return ts.seconds * 1000;
+      if (ts._seconds !== undefined) return ts._seconds * 1000;
+      const parsed = new Date(ts).getTime();
+      return Number.isFinite(parsed) ? parsed : 0;
+    }
 
     onMounted(async () => {
       try {
@@ -26,8 +47,7 @@ export const DashboardView = defineComponent({
 
           stats.value = {
             totalRecords:        p.totalRecords        ?? 0,
-            totalVersions:       p.totalVersions       ?? 0,
-            activeCollaborators: p.activeCollaborators ?? 0,
+            careTeam:            p.activeCollaborators ?? 0,
             pendingRequests:     pending,
           };
 
@@ -38,6 +58,7 @@ export const DashboardView = defineComponent({
             resource: c.commitMessage || c.title || 'a record',
             time:     relativeTime(c.createdAt),
             type:     c.committedByRole === 'doctor' ? 'doctor' : 'self',
+            createdAtMs: toMillis(c.createdAt),
           }));
 
         } else {
@@ -48,7 +69,7 @@ export const DashboardView = defineComponent({
           };
 
           const notifRes = await api.get('/notifications').catch(() => ({ notifications: [] }));
-          recentActivity.value = (notifRes.notifications || []).slice(0, 5).map(n => ({
+          recentActivity.value = (notifRes.notifications || []).map(n => ({
             id:       n.id,
             label:    n.title || 'Notification',
             resource: n.body  || '',
@@ -56,6 +77,7 @@ export const DashboardView = defineComponent({
             type:     n.type === 'endorsement'   ? 'endorse'
                     : n.type === 'access_request' ? 'request'
                     : 'approve',
+            createdAtMs: toMillis(n.createdAt),
           }));
         }
       } catch (e) {
@@ -63,6 +85,25 @@ export const DashboardView = defineComponent({
       } finally {
         loading.value = false;
       }
+    });
+
+    const displayedActivity = computed(() => {
+      let items = [...recentActivity.value];
+
+      if (!isPatient) {
+        items = items
+          .filter((i) => i.createdAtMs <= previousDayCutoffMs)
+          .sort((a, b) => b.createdAtMs - a.createdAtMs);
+
+        const q = activityQuery.value.trim().toLowerCase();
+        if (q) {
+          items = items.filter((i) =>
+            `${i.label} ${i.resource}`.toLowerCase().includes(q)
+          );
+        }
+      }
+
+      return items.slice(0, 8);
     });
 
     const activityIcon = (type) => ({
@@ -74,7 +115,19 @@ export const DashboardView = defineComponent({
       approve: 'text-sage-500', endorse: 'text-amber-400',
     }[type] || 'text-ink-500');
 
-    return { stats, recentActivity, loading, isPatient, activityIcon, activityColor, appState, router };
+    return {
+      stats,
+      recentActivity,
+      displayedActivity,
+      loading,
+      isPatient,
+      activityQuery,
+      previousDayLabel,
+      activityIcon,
+      activityColor,
+      appState,
+      router,
+    };
   },
 
   template: `
@@ -95,18 +148,14 @@ export const DashboardView = defineComponent({
       </div>
 
       <!-- Patient stats -->
-      <div v-else-if="stats && isPatient" class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
+      <div v-else-if="stats && isPatient" class="grid grid-cols-2 md:grid-cols-3 gap-3 mb-8">
         <div class="stat-card">
           <div class="mono text-2xl text-ink-100 font-medium">{{ stats.totalRecords }}</div>
           <div class="mono text-[10px] text-ink-600 mt-1">Total Records</div>
         </div>
         <div class="stat-card">
-          <div class="mono text-2xl text-sage-400 font-medium">{{ stats.totalVersions }}</div>
-          <div class="mono text-[10px] text-ink-600 mt-1">Commits</div>
-        </div>
-        <div class="stat-card">
-          <div class="mono text-2xl text-ink-100 font-medium">{{ stats.activeCollaborators }}</div>
-          <div class="mono text-[10px] text-ink-600 mt-1">Collaborators</div>
+          <div class="mono text-2xl text-ink-100 font-medium">{{ stats.careTeam }}</div>
+          <div class="mono text-[10px] text-ink-600 mt-1">Care Team</div>
         </div>
         <div class="stat-card">
           <div class="mono text-2xl font-medium" :class="stats.pendingRequests > 0 ? 'text-rust-400' : 'text-ink-400'">
@@ -142,7 +191,19 @@ export const DashboardView = defineComponent({
 
       <!-- Activity feed -->
       <div class="card p-5">
-        <p class="mono text-xs text-ink-600 uppercase tracking-wider mb-4">Recent Activity</p>
+        <div class="flex items-start justify-between gap-3 mb-4">
+          <div>
+            <p class="mono text-xs text-ink-600 uppercase tracking-wider">Recent Activity</p>
+            <p v-if="!isPatient" class="mono text-[10px] text-ink-700 mt-1">
+              Sorted latest first (up to {{ previousDayLabel }})
+            </p>
+          </div>
+          <input
+            v-if="!isPatient"
+            v-model="activityQuery"
+            class="input-field text-xs py-2 w-52"
+            placeholder="Search activity..." />
+        </div>
         <div v-if="loading" class="space-y-4">
           <div v-for="i in 3" :key="i" class="flex gap-3 animate-pulse">
             <div class="w-7 h-7 rounded-full bg-ink-800 flex-shrink-0"></div>
@@ -152,12 +213,12 @@ export const DashboardView = defineComponent({
             </div>
           </div>
         </div>
-        <div v-else-if="recentActivity.length === 0" class="text-center py-8">
+        <div v-else-if="displayedActivity.length === 0" class="text-center py-8">
           <div class="text-3xl text-ink-800 mb-2">◌</div>
           <p class="text-ink-600 text-sm">No recent activity</p>
         </div>
         <div v-else class="space-y-4">
-          <div v-for="item in recentActivity" :key="item.id" class="flex gap-3">
+          <div v-for="item in displayedActivity" :key="item.id" class="flex gap-3">
             <div class="w-7 h-7 rounded-full bg-ink-800 border border-ink-700 flex items-center justify-center flex-shrink-0"
               :class="activityColor(item.type)">
               <span class="text-xs">{{ activityIcon(item.type) }}</span>

@@ -45,7 +45,7 @@ export const Sidebar = defineComponent({
   template: `
     <aside class="sidebar flex flex-col gap-1 py-4 px-3 h-full">
       <div class="mb-6 px-2">
-        <div class="serif text-sage-400 text-xl mb-0.5">Medilocker</div>
+        <div class="serif text-sage-400 text-xl mb-0.5">MediHub</div>
         <div class="mono text-xs text-ink-500">v1.0 · {{ appState.user?.role || 'user' }}</div>
       </div>
 

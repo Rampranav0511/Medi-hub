@@ -6,7 +6,13 @@
 // Firebase ID tokens expire after 1 hour. We call getIdToken(false) which
 // returns the cached token or refreshes it automatically if it's close to expiry.
 
-const API_BASE = 'http://localhost:3000/api';
+const API_BASE = (
+  window.__API_BASE__ ||
+  localStorage.getItem('ml_api_base') ||
+  (window.location.hostname === 'localhost'
+    ? 'http://localhost:3000/api'
+    : `${window.location.origin}/api`)
+).replace(/\/+$/, '');
 
 async function getToken() {
   // Always prefer a live Firebase token — Firebase SDK auto-refreshes when needed
