@@ -23,7 +23,11 @@ async function getToken() {
     } catch (e) {
       console.error('[api] Firebase getIdToken failed:', e.code || e.message);
       // Token is irrecoverable — force re-login
-      if (window.appState) window.appState.token = null;
+      if (window.appState) {
+        window.appState.token = null;
+        window.appState.user = null;
+        window.appState.unreadCount = 0;
+      }
       localStorage.removeItem('ml_token');
       localStorage.removeItem('ml_user');
       throw new Error('Session expired. Please sign in again.');
@@ -80,11 +84,18 @@ async function request(method, endpoint, data = null, isMultipart = false) {
     const msg = json.error || json.message || `HTTP ${res.status}`;
     if (res.status === 401) {
       // Wipe stale credentials and force re-login
-      if (window.appState) window.appState.token = null;
+      if (window.appState) {
+        window.appState.token = null;
+        window.appState.user = null;
+        window.appState.unreadCount = 0;
+      }
       localStorage.removeItem('ml_token');
       localStorage.removeItem('ml_user');
     }
-    throw new Error(msg);
+    const err = new Error(msg);
+    err.status = res.status;
+    if (Array.isArray(json.errors)) err.details = json.errors;
+    throw err;
   }
 
   return json;

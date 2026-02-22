@@ -53,7 +53,7 @@ export const router = createRouter({
 router.beforeEach((to, _from, next) => {
   if (!to.meta.public && !appState.token) {
     next('/login');
-  } else if (to.path === '/login' && appState.token) {
+  } else if (to.path === '/login' && appState.token && appState.user?.role) {
     next('/dashboard');
   } else {
     next();

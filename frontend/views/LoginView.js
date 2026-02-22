@@ -11,7 +11,7 @@
 // it requires Firebase to be configured in index.html.
 
 import api from '../services/api.js';
-import { appState, setAuth, showToast } from '../services/state.js';
+import { setAuth, showToast } from '../services/state.js';
 
 const { ref, reactive, defineComponent } = Vue;
 const { useRouter } = VueRouter;
@@ -41,10 +41,103 @@ export const LoginView = defineComponent({
       return hasCore;
     }
 
+    function parseQualifications() {
+      return form.qualifications
+        .split(',')
+        .map((q) => q.trim())
+        .filter(Boolean);
+    }
+
+    function validateRegistrationForm() {
+      if (!form.displayName || form.displayName.trim().length < 2) {
+        return 'Full name is required.';
+      }
+
+      if (role.value === 'patient') {
+        if (!form.dateOfBirth) return 'Date of birth is required.';
+        if (!['male', 'female', 'other'].includes(form.gender)) {
+          return 'Please select a valid gender.';
+        }
+        if (form.bloodGroup && !['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].includes(form.bloodGroup)) {
+          return 'Please select a valid blood group.';
+        }
+        return '';
+      }
+
+      if (!form.specialization || form.specialization.trim().length < 2) {
+        return 'Specialization is required.';
+      }
+      if (!form.licenseNumber || form.licenseNumber.trim().length < 4) {
+        return 'License number is required.';
+      }
+      if (parseQualifications().length === 0) {
+        return 'At least one qualification is required.';
+      }
+
+      const years = Number(form.yearsOfExperience);
+      if (!Number.isFinite(years) || years < 0 || years > 60) {
+        return 'Years of experience must be between 0 and 60.';
+      }
+
+      return '';
+    }
+
+    async function resolveFirebaseUser() {
+      if (mode.value === 'login') {
+        const cred = await window._firebaseSignIn(
+          window._firebaseAuth, form.email, form.password
+        );
+        return cred.user;
+      }
+
+      const currentUser = window._firebaseAuth?.currentUser;
+      if (
+        currentUser &&
+        currentUser.email &&
+        currentUser.email.toLowerCase() === form.email.toLowerCase()
+      ) {
+        return currentUser;
+      }
+
+      try {
+        const cred = await window._firebaseSignIn(
+          window._firebaseAuth, form.email, form.password
+        );
+        return cred.user;
+      } catch (signInErr) {
+        if (signInErr?.code === 'auth/user-not-found' || signInErr?.code === 'auth/invalid-credential') {
+          try {
+            const cred = await window._firebaseSignUp(
+              window._firebaseAuth, form.email, form.password
+            );
+            return cred.user;
+          } catch (signUpErr) {
+            if (signUpErr?.code === 'auth/email-already-in-use' && signInErr?.code === 'auth/invalid-credential') {
+              throw signInErr;
+            }
+            throw signUpErr;
+          }
+        }
+        throw signInErr;
+      }
+    }
+
     async function handleSubmit() {
+      if (loading.value) return;
+
       if (!form.email || !form.password) {
         error.value = 'Email and password are required.';
         return;
+      }
+
+      form.email = form.email.trim().toLowerCase();
+
+      if (mode.value === 'register') {
+        const validationError = validateRegistrationForm();
+        if (validationError) {
+          error.value = validationError;
+          return;
+        }
       }
 
       if (!firebaseReady()) {
@@ -59,20 +152,7 @@ export const LoginView = defineComponent({
 
       try {
         // ── Step 1: Authenticate with Firebase to get a real ID token ──────────
-        let firebaseUser;
-
-        if (mode.value === 'login') {
-          const cred = await window._firebaseSignIn(
-            window._firebaseAuth, form.email, form.password
-          );
-          firebaseUser = cred.user;
-        } else {
-          // Register: create Firebase account first
-          const cred = await window._firebaseSignUp(
-            window._firebaseAuth, form.email, form.password
-          );
-          firebaseUser = cred.user;
-        }
+        const firebaseUser = await resolveFirebaseUser();
 
         // Force-refresh so we always have a fresh token
         const idToken = await firebaseUser.getIdToken(true);
@@ -94,28 +174,37 @@ export const LoginView = defineComponent({
 
           const body = role.value === 'patient'
             ? {
-                displayName:  form.displayName,
+                displayName:  form.displayName.trim(),
                 dateOfBirth:  form.dateOfBirth,
                 gender:       form.gender,
                 bloodGroup:   form.bloodGroup,
               }
             : {
-                displayName:        form.displayName,
-                specialization:     form.specialization,
-                licenseNumber:      form.licenseNumber,
-                qualifications:     form.qualifications.split(',').map(q => q.trim()).filter(Boolean),
+                displayName:        form.displayName.trim(),
+                specialization:     form.specialization.trim(),
+                licenseNumber:      form.licenseNumber.trim(),
+                qualifications:     parseQualifications(),
                 yearsOfExperience:  Number(form.yearsOfExperience),
               };
 
-          await api.post(endpoint, body);
+          try {
+            await api.post(endpoint, body);
+          } catch (registerErr) {
+            if (registerErr.status !== 409) {
+              throw registerErr;
+            }
+          }
         }
 
         // ── Step 4: Fetch full user profile from Firestore via backend ─────────
         const meRes = await api.get('/auth/me');
-        const user    = meRes.user    || {};
-        const profile = meRes.profile || {};
+        const user = meRes.user || {};
+        const profile = meRes.profile && typeof meRes.profile === 'object'
+          ? meRes.profile
+          : null;
+        const effectiveRole = user.role || profile?.role || null;
 
-        if (!profile.role) {
+        if (!effectiveRole || !profile) {
           // Firebase account exists but backend profile is missing.
           if (mode.value === 'login') {
             mode.value = 'register';
@@ -125,7 +214,13 @@ export const LoginView = defineComponent({
           throw new Error('User profile not found. Please complete registration first.');
         }
 
-        setAuth(cleanToken, { uid: firebaseUser.uid, email: firebaseUser.email, ...user, ...profile });
+        setAuth(cleanToken, {
+          uid: firebaseUser.uid,
+          email: firebaseUser.email,
+          ...user,
+          ...(profile || {}),
+          role: effectiveRole,
+        });
         showToast('Welcome to Medilocker!');
         router.push('/dashboard');
 
@@ -142,7 +237,15 @@ export const LoginView = defineComponent({
           'auth/network-request-failed': 'Network error. Check your connection.',
           'auth/user-disabled':        'This account has been disabled.',
         };
-        error.value = e.code ? (firebaseErrors[e.code] || e.message) : e.message;
+        if (e.code) {
+          error.value = firebaseErrors[e.code] || e.message;
+        } else if (Array.isArray(e.details) && e.details.length > 0) {
+          error.value = e.details.map((d) => d.message).join(' ');
+        } else if (e.status === 409 && mode.value === 'register') {
+          error.value = 'Profile already exists. Please sign in instead.';
+        } else {
+          error.value = e.message || 'Unable to continue. Please try again.';
+        }
       } finally {
         loading.value = false;
       }

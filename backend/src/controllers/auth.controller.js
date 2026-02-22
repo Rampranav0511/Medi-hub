@@ -32,6 +32,7 @@ export const registerPatient = async (req, res, next) => {
 
     const patientProfile = {
       uid,
+      role: 'patient',
       displayName,
       dateOfBirth,
       gender,
@@ -100,6 +101,7 @@ export const registerDoctor = async (req, res, next) => {
     // GitHub-style contribution stats
     const doctorProfile = {
       uid,
+      role: 'doctor',
       displayName,
       specialization,
       qualifications,
@@ -165,10 +167,11 @@ export const getMe = async (req, res, next) => {
 
     const collection = role === 'patient' ? COLLECTIONS.PATIENTS : COLLECTIONS.DOCTORS;
     const profileDoc = await db.collection(collection).doc(uid).get();
+    const profile = profileDoc.exists ? profileDoc.data() : null;
 
     res.json({
       user: req.user,
-      profile: profileDoc.exists ? profileDoc.data() : null,
+      profile: profile ? { ...profile, role } : null,
     });
   } catch (err) {
     next(err);
