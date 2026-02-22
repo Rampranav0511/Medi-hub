@@ -1,13 +1,267 @@
 <!DOCTYPE html>
-<html lang="">
-  <head>
-    <meta charset="UTF-8">
-    <link rel="icon" href="/favicon.ico">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Vite App</title>
-  </head>
-  <body>
-    <div id="app"></div>
-    <script type="module" src="/src/main.js"></script>
-  </body>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Medilocker — Secure Health Records</title>
+
+  <!-- CDN dependencies (loaded before ES modules) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+  <script src="https://unpkg.com/vue-router@4/dist/vue-router.global.js"></script>
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@300;400;500&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&display=swap" rel="stylesheet" />
+
+  <!-- Tailwind config -->
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            serif: ['"DM Serif Display"', 'Georgia', 'serif'],
+            mono:  ['"DM Mono"', 'monospace'],
+            sans:  ['"DM Sans"', 'system-ui', 'sans-serif'],
+          },
+          colors: {
+            ink: {
+              50:  '#f0f0ee', 100: '#d8d8d4', 200: '#b8b8b0', 300: '#909088',
+              400: '#6a6a62', 500: '#48483f', 600: '#33332c', 700: '#232320',
+              800: '#161614', 900: '#0c0c0a', 950: '#070706',
+            },
+            sage: {
+              50:  '#f2f7f2', 100: '#ddeedd', 200: '#b8dbb8', 300: '#8dc48d',
+              400: '#60a860', 500: '#3d8b3d', 600: '#2d6e2d', 700: '#1f511f',
+              800: '#133613', 900: '#0a1f0a', 950: '#061306',
+            },
+            rust: { 400: '#d97b4a', 500: '#c4612c' },
+            cream: '#f5f0e8',
+          },
+          animation: {
+            'fade-in':   'fadeIn 0.4s ease-out',
+            'slide-up':  'slideUp 0.5s cubic-bezier(0.16, 1, 0.3, 1)',
+            'pulse-slow':'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+          },
+          keyframes: {
+            fadeIn:  { from: { opacity: '0' },                              to: { opacity: '1' } },
+            slideUp: { from: { opacity: '0', transform: 'translateY(24px)' }, to: { opacity: '1', transform: 'translateY(0)' } },
+          },
+        },
+      },
+    };
+  </script>
+
+  <!-- ─── Optional: Firebase SDK ────────────────────────────────────────────────
+       Uncomment and add your config to enable real Firebase Auth.
+       Without this, the app uses the backend's own /auth/login endpoint.
+  <script type="module">
+    import { initializeApp }                       from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+    import { getAuth, signInWithEmailAndPassword,
+             createUserWithEmailAndPassword, signOut } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
+
+    const firebaseConfig = {
+      apiKey:            "YOUR_API_KEY",
+      authDomain:        "YOUR_PROJECT.firebaseapp.com",
+      projectId:         "YOUR_PROJECT_ID",
+      storageBucket:     "YOUR_PROJECT.appspot.com",
+      messagingSenderId: "YOUR_SENDER_ID",
+      appId:             "YOUR_APP_ID",
+    };
+
+    const fb = initializeApp(firebaseConfig);
+    const auth = getAuth(fb);
+    window._firebaseAuth    = auth;
+    window._firebaseSignIn  = signInWithEmailAndPassword;
+    window._firebaseSignUp  = createUserWithEmailAndPassword;
+  </script>
+  ──────────────────────────────────────────────────────────────────────────── -->
+
+  <style>
+    /* ─── Base ──────────────────────────────────────────────────────────────── */
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'DM Sans', system-ui, sans-serif;
+      background-color: #0c0c0a;
+      color: #d8d8d4;
+      min-height: 100vh;
+    }
+    ::-webkit-scrollbar       { width: 6px; }
+    ::-webkit-scrollbar-track { background: #161614; }
+    ::-webkit-scrollbar-thumb { background: #33332c; border-radius: 3px; }
+
+    /* ─── Typography helpers ────────────────────────────────────────────────── */
+    .mono  { font-family: 'DM Mono', monospace; }
+    .serif { font-family: 'DM Serif Display', serif; }
+
+    /* ─── Layout ────────────────────────────────────────────────────────────── */
+    .grid-bg {
+      background-image:
+        linear-gradient(rgba(61,139,61,0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(61,139,61,0.03) 1px, transparent 1px);
+      background-size: 40px 40px;
+    }
+    .sidebar { width: 220px; flex-shrink: 0; }
+    @media (max-width: 768px) { .sidebar { width: 100%; } }
+
+    /* ─── Cards ─────────────────────────────────────────────────────────────── */
+    .card {
+      background: rgba(22,22,20,0.8);
+      border: 1px solid rgba(255,255,255,0.05);
+      border-radius: 10px;
+      transition: border-color 0.2s, transform 0.2s;
+    }
+    .card:hover { border-color: rgba(255,255,255,0.1); }
+
+    .stat-card {
+      background: rgba(22,22,20,0.6);
+      border: 1px solid rgba(255,255,255,0.05);
+      border-radius: 8px;
+      padding: 16px;
+      transition: border-color 0.2s;
+    }
+    .stat-card:hover { border-color: rgba(61,139,61,0.3); }
+
+    /* ─── Navigation ────────────────────────────────────────────────────────── */
+    .nav-link {
+      font-family: 'DM Mono', monospace;
+      font-size: 12px;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      padding: 6px 12px;
+      border-radius: 4px;
+      transition: all 0.15s;
+      color: #909088;
+    }
+    .nav-link:hover, .nav-link.active {
+      color: #8dc48d;
+      background: rgba(61,139,61,0.08);
+    }
+
+    /* ─── Buttons ───────────────────────────────────────────────────────────── */
+    .btn-primary {
+      background: #2d6e2d; color: #ddeedd;
+      border: 1px solid #3d8b3d;
+      padding: 10px 20px; border-radius: 6px;
+      font-size: 13px; font-weight: 500;
+      cursor: pointer; transition: all 0.15s;
+    }
+    .btn-primary:hover:not(:disabled) { background: #3d8b3d; border-color: #60a860; }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .btn-ghost {
+      background: transparent; color: #909088;
+      border: 1px solid rgba(255,255,255,0.08);
+      padding: 10px 20px; border-radius: 6px;
+      font-size: 13px; cursor: pointer; transition: all 0.15s;
+    }
+    .btn-ghost:hover { background: rgba(255,255,255,0.04); color: #d8d8d4; }
+
+    .btn-danger {
+      background: rgba(201,97,44,0.15); color: #d97b4a;
+      border: 1px solid rgba(201,97,44,0.3);
+      padding: 8px 16px; border-radius: 6px;
+      font-size: 13px; cursor: pointer; transition: all 0.15s;
+    }
+    .btn-danger:hover { background: rgba(201,97,44,0.25); }
+
+    /* ─── Forms ─────────────────────────────────────────────────────────────── */
+    .input-field {
+      width: 100%;
+      background: rgba(12,12,10,0.6);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 6px; padding: 10px 14px;
+      color: #d8d8d4; font-size: 13px; outline: none;
+      transition: border-color 0.15s;
+      font-family: 'DM Sans', sans-serif;
+    }
+    .input-field:focus         { border-color: rgba(61,139,61,0.5); }
+    .input-field::placeholder  { color: #48483f; }
+    select.input-field option  { background: #161614; }
+
+    label {
+      font-size: 11px; font-family: 'DM Mono', monospace;
+      color: #6a6a62; letter-spacing: 0.05em;
+      text-transform: uppercase; display: block; margin-bottom: 6px;
+    }
+
+    /* ─── Badges ────────────────────────────────────────────────────────────── */
+    .tag-badge {
+      display: inline-flex; align-items: center;
+      padding: 2px 8px; border-radius: 9999px;
+      font-size: 11px; font-family: 'DM Mono', monospace; font-weight: 500;
+      background: rgba(61,139,61,0.12);
+      border: 1px solid rgba(61,139,61,0.25);
+      color: #8dc48d;
+    }
+
+    .status-badge {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 3px 10px; border-radius: 9999px;
+      font-size: 11px; font-family: 'DM Mono', monospace;
+    }
+    .status-pending  { background: rgba(196,97,44,0.1);  color: #d97b4a; border: 1px solid rgba(196,97,44,0.25); }
+    .status-approved { background: rgba(61,139,61,0.1);  color: #60a860; border: 1px solid rgba(61,139,61,0.25); }
+    .status-denied   { background: rgba(180,60,60,0.1);  color: #e07070; border: 1px solid rgba(180,60,60,0.25); }
+    .status-revoked  { background: rgba(180,60,60,0.1);  color: #e07070; border: 1px solid rgba(180,60,60,0.25); }
+    .status-expired  { background: rgba(72,72,63,0.3);   color: #6a6a62; border: 1px solid rgba(72,72,63,0.4); }
+
+    .notification-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%; background: #3d8b3d; display: inline-block;
+    }
+
+    /* ─── Modals ────────────────────────────────────────────────────────────── */
+    .modal-backdrop {
+      position: fixed; inset: 0;
+      background: rgba(7,7,6,0.85); backdrop-filter: blur(4px);
+      z-index: 50; display: flex; align-items: center; justify-content: center; padding: 24px;
+    }
+    .modal {
+      background: #161614; border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 12px; width: 100%; max-width: 520px;
+      max-height: 90vh; overflow-y: auto; padding: 28px;
+    }
+
+    /* ─── Contribution graph ────────────────────────────────────────────────── */
+    .contribution-cell {
+      width: 12px; height: 12px; border-radius: 2px; transition: transform 0.1s;
+    }
+    .contribution-cell:hover { transform: scale(1.4); }
+
+    /* ─── Timeline ──────────────────────────────────────────────────────────── */
+    .timeline-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: #3d8b3d; border: 2px solid #0c0c0a;
+      box-shadow: 0 0 0 2px #2d6e2d; flex-shrink: 0; margin-top: 4px;
+    }
+
+    /* ─── File drop zone ────────────────────────────────────────────────────── */
+    .file-drop {
+      border: 2px dashed rgba(255,255,255,0.1); border-radius: 8px;
+      padding: 32px; text-align: center; cursor: pointer; transition: all 0.2s;
+    }
+    .file-drop:hover, .file-drop.drag-over {
+      border-color: rgba(61,139,61,0.4); background: rgba(61,139,61,0.03);
+    }
+
+    /* ─── Animations ────────────────────────────────────────────────────────── */
+    .slide-toast-enter-active { transition: all 0.3s ease; }
+    .slide-toast-leave-active { transition: all 0.2s ease; }
+    .slide-toast-enter-from   { opacity: 0; transform: translateY(12px); }
+    .slide-toast-leave-to     { opacity: 0; transform: translateY(12px); }
+
+    .glass {
+      background: rgba(22,22,20,0.8); backdrop-filter: blur(12px);
+      border: 1px solid rgba(255,255,255,0.06);
+    }
+  </style>
+</head>
+<body class="grid-bg">
+  <div id="app"></div>
+  <!-- Main app module -->
+  <script type="module" src="main.js"></script>
+</body>
 </html>

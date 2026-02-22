@@ -1,22 +1,23 @@
 {
-  "name": "medi-hub-frontend",
-  "version": "0.0.0",
-  "private": true,
+  "name": "medilocker-frontend",
+  "version": "1.0.0",
+  "description": "Medilocker — Secure Health Records Platform (Vue 3 + Tailwind CSS)",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
-  },
-  "dependencies": {
-    "vue": "^3.5.28"
+    "dev": "npx serve . -l 5173",
+    "preview": "npx serve . -l 4173"
   },
   "devDependencies": {
-    "@vitejs/plugin-vue": "^6.0.4",
-    "vite": "^7.3.1",
-    "vite-plugin-vue-devtools": "^8.0.6"
+    "serve": "^13.0.4"
   },
+  "keywords": [
+    "medilocker",
+    "health",
+    "records",
+    "vue3"
+  ],
+  "license": "MIT",
   "engines": {
-    "node": "^20.19.0 || >=22.12.0"
+    "node": ">=18.0.0"
   }
 }
