@@ -52,12 +52,13 @@ router.patch(
  * DELETE /api/access-requests/:requestId/revoke
  * Patient revokes an approved access grant
  */
+router.patch('/:requestId/revoke', requireRole('patient'), revokeAccess);
 router.delete('/:requestId/revoke', requireRole('patient'), revokeAccess);
 
 /**
  * GET /api/patients/:patientId/collaborators
  * Get all doctors currently with access to a patient's records
  */
-router.get('/patients/:patientId/collaborators', getPatientCollaborators);
+router.get('/:patientId/collaborators', getPatientCollaborators);
 
 export default router;

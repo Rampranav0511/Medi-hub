@@ -106,12 +106,13 @@ export const uploadRecord = async (req, res, next) => {
     );
     batch.set(db.collection(COLLECTIONS.COMMITS).doc(commit.id), commit);
 
-    // Increment patient stats
-    batch.update(db.collection(COLLECTIONS.PATIENTS).doc(patientId), {
+    // Keep stats resilient for legacy accounts where patient profile doc may be missing.
+    batch.set(db.collection(COLLECTIONS.PATIENTS).doc(patientId), {
+      uid: patientId,
       totalRecords: FieldValue.increment(1),
       totalVersions: FieldValue.increment(1),
       updatedAt: now,
-    });
+    }, { merge: true });
 
     await batch.commit();
 
@@ -221,10 +222,11 @@ export const addRecordVersion = async (req, res, next) => {
       version
     );
     batch.set(db.collection(COLLECTIONS.COMMITS).doc(commit.id), commit);
-    batch.update(db.collection(COLLECTIONS.PATIENTS).doc(record.patientId), {
+    batch.set(db.collection(COLLECTIONS.PATIENTS).doc(record.patientId), {
+      uid: record.patientId,
       totalVersions: FieldValue.increment(1),
       updatedAt: now,
-    });
+    }, { merge: true });
     await batch.commit();
 
     // Update doctor contribution graph if doctor made the commit

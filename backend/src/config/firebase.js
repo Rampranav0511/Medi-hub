@@ -8,17 +8,24 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Load serviceAccountKey.json directly — no dotenv needed
 const serviceAccountPath = path.join(__dirname, '../../serviceAccountKey.json');
 const serviceAccount = JSON.parse(readFileSync(serviceAccountPath, 'utf8'));
+const appConfigPath = path.join(__dirname, '../../config.json');
+const appConfig = JSON.parse(readFileSync(appConfigPath, 'utf8'));
+
+const storageBucket =
+  appConfig.storageBucket ||
+  serviceAccount.storage_bucket ||
+  `${serviceAccount.project_id}.firebasestorage.app`;
 
 const initializeFirebase = () => {
   if (admin.apps.length > 0) return admin.apps[0];
 
   const app = admin.initializeApp({
     credential: admin.credential.cert(serviceAccount),
-    storageBucket: serviceAccount.project_id + '.appspot.com',
+    storageBucket,
     databaseURL: `https://${serviceAccount.project_id}-default-rtdb.firebaseio.com`,
   });
 
-  console.log(`✅ Firebase initialised — project: ${serviceAccount.project_id}`);
+  console.log(`✅ Firebase initialised — project: ${serviceAccount.project_id} (bucket: ${storageBucket})`);
   return app;
 };
 

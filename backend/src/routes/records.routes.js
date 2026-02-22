@@ -64,12 +64,12 @@ router.get('/:recordId/versions/:versionId/download', requireVerifiedDoctor, get
  * GET /api/patients/:patientId/records
  * List all records for a patient
  */
-router.get('/patients/:patientId/records', requireVerifiedDoctor, getPatientRecords);
+router.get('/:patientId/records', requireVerifiedDoctor, getPatientRecords);
 
 /**
  * GET /api/patients/:patientId/commits
  * Full commit log for a patient's medical repository
  */
-router.get('/patients/:patientId/commits', requireVerifiedDoctor, getPatientCommitLog);
+router.get('/:patientId/commits', requireVerifiedDoctor, getPatientCommitLog);
 
 export default router;
