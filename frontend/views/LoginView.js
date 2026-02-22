@@ -116,7 +116,12 @@ export const LoginView = defineComponent({
         const profile = meRes.profile || {};
 
         if (!profile.role) {
-          // Profile doc doesn't exist yet (first login before register completes)
+          // Firebase account exists but backend profile is missing.
+          if (mode.value === 'login') {
+            mode.value = 'register';
+            error.value = 'Your account exists, but your profile is incomplete. Please finish registration.';
+            return;
+          }
           throw new Error('User profile not found. Please complete registration first.');
         }
 
