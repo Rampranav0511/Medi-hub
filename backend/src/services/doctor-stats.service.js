@@ -111,7 +111,27 @@ export const expireStaleAccessRequests = async () => {
 
     const batch = db.batch();
     snap.docs.forEach((d) => {
-      batch.update(d.ref, { status: 'expired', isExpired: true });
+      const request = d.data();
+      batch.update(d.ref, { status: 'expired', isExpired: true, expiredAt: now });
+      // Keep counters in sync when access naturally expires.
+      batch.set(
+        db.collection(COLLECTIONS.PATIENTS).doc(request.patientId),
+        {
+          uid: request.patientId,
+          activeCollaborators: FieldValue.increment(-1),
+          updatedAt: now,
+        },
+        { merge: true }
+      );
+      batch.set(
+        db.collection(COLLECTIONS.DOCTORS).doc(request.doctorId),
+        {
+          uid: request.doctorId,
+          'stats.activeCases': FieldValue.increment(-1),
+          updatedAt: now,
+        },
+        { merge: true }
+      );
     });
     await batch.commit();
 

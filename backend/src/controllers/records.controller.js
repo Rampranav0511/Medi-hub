@@ -2,6 +2,7 @@ import { db, bucket, FieldValue, Timestamp, COLLECTIONS } from '../config/fireba
 import { v4 as uuidv4 } from 'uuid';
 import { logActivity } from '../services/activity.service.js';
 import { updateDoctorStats } from '../services/doctor-stats.service.js';
+import { createNotification } from '../services/notification.service.js';
 
 /**
  * POST /api/records
@@ -126,6 +127,161 @@ export const uploadRecord = async (req, res, next) => {
 
     res.status(201).json({
       message: 'Record uploaded successfully.',
+      record,
+      version: { ...version, downloadUrl: signedUrl },
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * POST /api/records/prescriptions
+ * Doctor creates a prescription/health note as a new record for a patient.
+ */
+export const createDoctorPrescription = async (req, res, next) => {
+  try {
+    const doctorId = req.user.uid;
+    const doctorName = req.user.displayName || 'Doctor';
+    const {
+      patientId,
+      title,
+      prescriptionText,
+      notes,
+      tags,
+      issuedDate,
+    } = req.body;
+
+    await assertDoctorWriteAccess(doctorId, patientId);
+
+    const recordId = uuidv4();
+    const versionId = uuidv4();
+    const now = Timestamp.now();
+
+    const fileName = `${title.replace(/[^a-z0-9]+/gi, '_').toLowerCase() || 'prescription'}.txt`;
+    const storagePath = `records/${patientId}/${recordId}/v1_${versionId}.txt`;
+    const fileRef = bucket.file(storagePath);
+
+    const textPayload = [
+      'Medical Prescription',
+      `Doctor: ${doctorName}`,
+      `Doctor ID: ${doctorId}`,
+      `Patient ID: ${patientId}`,
+      `Issued At: ${(issuedDate || now.toDate().toISOString())}`,
+      '',
+      'Prescription',
+      prescriptionText.trim(),
+      '',
+      notes ? `Notes\n${notes.trim()}` : null,
+    ]
+      .filter(Boolean)
+      .join('\n');
+
+    const content = Buffer.from(textPayload, 'utf8');
+
+    await fileRef.save(content, {
+      metadata: {
+        contentType: 'text/plain',
+        metadata: {
+          patientId,
+          recordId,
+          versionId,
+          uploadedAt: now.toDate().toISOString(),
+          source: 'doctor-prescription',
+        },
+      },
+    });
+
+    const [signedUrl] = await fileRef.getSignedUrl({
+      action: 'read',
+      expires: Date.now() + 24 * 60 * 60 * 1000,
+    });
+
+    const record = {
+      id: recordId,
+      patientId,
+      title: title.trim(),
+      recordType: 'prescription',
+      description: notes?.trim() || null,
+      tags: Array.isArray(tags) ? tags : [],
+      issuedBy: doctorName,
+      issuedDate: issuedDate || now.toDate().toISOString(),
+      currentVersion: 1,
+      currentVersionId: versionId,
+      totalVersions: 1,
+      isArchived: false,
+      createdAt: now,
+      updatedAt: now,
+      createdBy: doctorId,
+    };
+
+    const version = {
+      id: versionId,
+      recordId,
+      patientId,
+      versionNumber: 1,
+      commitMessage: `Prescription added by ${doctorName}`,
+      committedBy: doctorId,
+      committedByRole: 'doctor',
+      storagePath,
+      fileName,
+      fileSize: content.length,
+      mimeType: 'text/plain',
+      changeType: 'prescription_added',
+      createdAt: now,
+    };
+
+    const commit = {
+      id: uuidv4(),
+      recordId,
+      versionId,
+      patientId,
+      committedBy: doctorId,
+      committedByRole: 'doctor',
+      commitMessage: `Prescription added by ${doctorName}`,
+      changeType: 'prescription_added',
+      recordType: 'prescription',
+      createdAt: now,
+    };
+
+    const batch = db.batch();
+    batch.set(db.collection(COLLECTIONS.RECORDS).doc(recordId), record);
+    batch.set(
+      db.collection(COLLECTIONS.RECORDS).doc(recordId)
+        .collection(COLLECTIONS.RECORD_VERSIONS).doc(versionId),
+      version
+    );
+    batch.set(db.collection(COLLECTIONS.COMMITS).doc(commit.id), commit);
+    batch.set(
+      db.collection(COLLECTIONS.PATIENTS).doc(patientId),
+      {
+        uid: patientId,
+        totalRecords: FieldValue.increment(1),
+        totalVersions: FieldValue.increment(1),
+        updatedAt: now,
+      },
+      { merge: true }
+    );
+    await batch.commit();
+
+    await updateDoctorStats(doctorId, { recordUpdated: true, patientId });
+    await createNotification({
+      recipientId: patientId,
+      type: 'record_updated',
+      title: 'New Prescription Added',
+      body: `Dr. ${doctorName} added a prescription to your records.`,
+      metadata: { recordId, doctorId },
+    });
+    await logActivity({
+      actorId: doctorId,
+      actorRole: 'doctor',
+      action: 'prescription_added',
+      resourceId: recordId,
+      metadata: { patientId, title: title.trim() },
+    });
+
+    res.status(201).json({
+      message: 'Prescription added successfully.',
       record,
       version: { ...version, downloadUrl: signedUrl },
     });

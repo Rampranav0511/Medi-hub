@@ -177,3 +177,41 @@ export const getMe = async (req, res, next) => {
     next(err);
   }
 };
+
+/**
+ * GET /api/auth/patients/search?q=<name>
+ * Doctor-facing patient lookup by name/email.
+ */
+export const searchPatients = async (req, res, next) => {
+  try {
+    const query = (req.query.q || '').trim().toLowerCase();
+    if (query.length < 2) {
+      return res.json({ users: [], total: 0 });
+    }
+
+    // Keep this index-friendly in dev by filtering in memory.
+    const snap = await db
+      .collection(COLLECTIONS.USERS)
+      .where('role', '==', 'patient')
+      .limit(200)
+      .get();
+
+    const users = snap.docs
+      .map((d) => d.data())
+      .filter((u) => {
+        const name = (u.displayName || '').toLowerCase();
+        const email = (u.email || '').toLowerCase();
+        return name.includes(query) || email.includes(query);
+      })
+      .slice(0, 20)
+      .map((u) => ({
+        uid: u.uid,
+        displayName: u.displayName || 'Unknown',
+        email: u.email || null,
+      }));
+
+    return res.json({ users, total: users.length });
+  } catch (err) {
+    return next(err);
+  }
+};

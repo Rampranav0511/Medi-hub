@@ -1,5 +1,5 @@
 import { onSchedule } from 'firebase-functions/v2/scheduler';
-import { onDocumentCreated } from 'firebase-functions/v2/firestore';
+import { onDocumentCreated, onDocumentUpdated } from 'firebase-functions/v2/firestore';
 import { initializeApp } from 'firebase-admin/app';
 import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
 
@@ -27,7 +27,26 @@ export const expireAccessRequests = onSchedule('every 1 hours', async () => {
 
   const batch = db.batch();
   snap.docs.forEach((d) => {
-    batch.update(d.ref, { status: 'expired', isExpired: true });
+    const req = d.data();
+    batch.update(d.ref, { status: 'expired', isExpired: true, expiredAt: now });
+    batch.set(
+      db.collection('patients').doc(req.patientId),
+      {
+        uid: req.patientId,
+        activeCollaborators: FieldValue.increment(-1),
+        updatedAt: now,
+      },
+      { merge: true }
+    );
+    batch.set(
+      db.collection('doctors').doc(req.doctorId),
+      {
+        uid: req.doctorId,
+        'stats.activeCases': FieldValue.increment(-1),
+        updatedAt: now,
+      },
+      { merge: true }
+    );
   });
   await batch.commit();
 
@@ -65,11 +84,14 @@ export const onEndorsementCreated = onDocumentCreated(
 /**
  * Trigger: when a new access request is approved, update the doctor's response time stats.
  */
-export const onAccessRequestResponded = onDocumentCreated(
+export const onAccessRequestResponded = onDocumentUpdated(
   'access_requests/{requestId}',
   async (event) => {
-    const request = event.data?.data();
-    if (!request || request.status !== 'approved') return;
+    const before = event.data?.before?.data();
+    const request = event.data?.after?.data();
+    if (!request) return;
+    if (before?.status === 'approved') return;
+    if (request.status !== 'approved') return;
 
     const requestedAt = request.requestedAt?.toDate();
     const respondedAt = request.respondedAt?.toDate();

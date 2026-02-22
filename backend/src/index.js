@@ -21,6 +21,7 @@ import notificationsRoutes from './routes/notifications.routes.js';
 
 // Import middleware
 import { errorHandler, notFound } from './middleware/error.middleware.js';
+import { expireStaleAccessRequests } from './services/doctor-stats.service.js';
 
 const app = express();
 
@@ -31,7 +32,16 @@ app.use(compression());
 
 app.use(
   cors({
-    origin: config.allowedOrigins,
+    origin: (origin, callback) => {
+      // Allow non-browser tools (curl/postman) and same-origin requests.
+      if (!origin) return callback(null, true);
+      if (config.allowedOrigins.includes(origin)) return callback(null, true);
+      // Development convenience: allow any localhost port.
+      if (config.nodeEnv !== 'production' && /^http:\/\/localhost:\d+$/.test(origin)) {
+        return callback(null, true);
+      }
+      return callback(new Error(`CORS blocked origin: ${origin}`));
+    },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
@@ -104,5 +114,15 @@ app.listen(PORT, () => {
   console.log(`🔗 Health check: http://localhost:${PORT}/health`);
   console.log(`📚 API base:     http://localhost:${PORT}/api\n`);
 });
+
+// Local/dev safety net to expire stale access grants even when Cloud Functions
+// are not deployed.
+if (config.nodeEnv !== 'test') {
+  setInterval(() => {
+    expireStaleAccessRequests().catch((err) => {
+      console.error('Failed to expire stale access requests:', err.message);
+    });
+  }, 60 * 60 * 1000);
+}
 
 export default app;

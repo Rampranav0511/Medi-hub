@@ -7,22 +7,34 @@ import { db, FieldValue, Timestamp, COLLECTIONS } from '../config/firebase.js';
 export const getNotifications = async (req, res, next) => {
   try {
     const userId = req.user.uid;
-    const { unreadOnly } = req.query;
+    const { unreadOnly, limit = '50' } = req.query;
+    const safeLimit = Math.max(1, Math.min(parseInt(limit, 10) || 50, 100));
 
     let query = db
       .collection(COLLECTIONS.NOTIFICATIONS)
       .where('recipientId', '==', userId)
       .orderBy('createdAt', 'desc')
-      .limit(50);
+      .limit(safeLimit);
 
     if (unreadOnly === 'true') {
       query = query.where('isRead', '==', false);
     }
 
-    const snap = await query.get();
-    const notifications = snap.docs.map((d) => d.data());
+    const [snap, unreadSnap] = await Promise.all([
+      query.get(),
+      db
+        .collection(COLLECTIONS.NOTIFICATIONS)
+        .where('recipientId', '==', userId)
+        .where('isRead', '==', false)
+        .get(),
+    ]);
+    const notifications = snap.docs.map((d) => d.data()).sort((a, b) => {
+      const aSec = a?.createdAt?.seconds ?? a?.createdAt?._seconds ?? 0;
+      const bSec = b?.createdAt?.seconds ?? b?.createdAt?._seconds ?? 0;
+      return bSec - aSec;
+    });
 
-    const unreadCount = notifications.filter((n) => !n.isRead).length;
+    const unreadCount = unreadSnap.size;
 
     res.json({ notifications, unreadCount, total: notifications.length });
   } catch (err) {

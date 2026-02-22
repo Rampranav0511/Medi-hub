@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import {
   uploadRecord,
+  createDoctorPrescription,
   addRecordVersion,
   getRecordVersions,
   getVersionDownloadUrl,
@@ -26,6 +27,18 @@ router.post(
   upload.single('file'),
   validate(schemas.uploadRecord),
   uploadRecord
+);
+
+/**
+ * POST /api/records/prescriptions
+ * Doctor adds a prescription/health note for a patient.
+ */
+router.post(
+  '/prescriptions',
+  requireRole('doctor'),
+  requireVerifiedDoctor,
+  validate(schemas.createPrescription),
+  createDoctorPrescription
 );
 
 /**

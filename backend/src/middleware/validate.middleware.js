@@ -62,6 +62,15 @@ export const schemas = {
     commitMessage: Joi.string().min(5).max(300).required(),
   }),
 
+  createPrescription: Joi.object({
+    patientId: Joi.string().required(),
+    title: Joi.string().min(2).max(200).required(),
+    prescriptionText: Joi.string().min(5).max(5000).required(),
+    notes: Joi.string().max(3000).optional().allow(''),
+    tags: Joi.array().items(Joi.string().max(50)).max(10).optional(),
+    issuedDate: Joi.string().isoDate().optional(),
+  }),
+
   accessRequest: Joi.object({
     patientId: Joi.string().required(),
     reason: Joi.string().min(10).max(500).required(),

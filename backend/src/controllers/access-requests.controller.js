@@ -16,6 +16,7 @@ export const createAccessRequest = async (req, res, next) => {
     // Verify patient exists
     const patientDoc = await db.collection(COLLECTIONS.PATIENTS).doc(patientId).get();
     if (!patientDoc.exists) return res.status(404).json({ error: 'Patient not found.' });
+    const patientProfile = patientDoc.data();
 
     // Check no pending/approved request already exists
     const existingSnap = await db
@@ -41,6 +42,7 @@ export const createAccessRequest = async (req, res, next) => {
       doctorId,
       doctorName: req.user.displayName,
       patientId,
+      patientName: patientProfile?.displayName || null,
       reason,
       accessLevel: accessLevel || 'read',
       requestedRecordTypes,
@@ -124,10 +126,11 @@ export const respondToAccessRequest = async (req, res, next) => {
       await updateDoctorStats(request.doctorId, { newCase: true, patientId });
 
       // Update patient's collaborator count
-      await db.collection(COLLECTIONS.PATIENTS).doc(patientId).update({
+      await db.collection(COLLECTIONS.PATIENTS).doc(patientId).set({
+        uid: patientId,
         activeCollaborators: FieldValue.increment(1),
         updatedAt: now,
-      });
+      }, { merge: true });
     }
 
     await requestRef.update(update);
@@ -189,6 +192,11 @@ export const revokeAccess = async (req, res, next) => {
       activeCollaborators: FieldValue.increment(-1),
       updatedAt: now,
     });
+    await db.collection(COLLECTIONS.DOCTORS).doc(request.doctorId).set({
+      uid: request.doctorId,
+      'stats.activeCases': FieldValue.increment(-1),
+      updatedAt: now,
+    }, { merge: true });
 
     await createNotification({
       recipientId: request.doctorId,
@@ -244,7 +252,16 @@ export const getOutgoingRequests = async (req, res, next) => {
       .limit(50)
       .get();
 
-    const requests = snap.docs.map((d) => d.data());
+    const requests = await Promise.all(
+      snap.docs.map(async (d) => {
+        const accessRequest = d.data();
+        if (accessRequest.patientName) return accessRequest;
+
+        const patientDoc = await db.collection(COLLECTIONS.PATIENTS).doc(accessRequest.patientId).get();
+        const patientName = patientDoc.exists ? patientDoc.data()?.displayName || null : null;
+        return { ...accessRequest, patientName };
+      })
+    );
     res.json({ requests, total: requests.length });
   } catch (err) {
     next(err);

@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { registerPatient, registerDoctor, getMe } from '../controllers/auth.controller.js';
+import { registerPatient, registerDoctor, getMe, searchPatients } from '../controllers/auth.controller.js';
 import { authenticate, requireRole } from '../middleware/auth.middleware.js';
 import { validate, schemas } from '../middleware/validate.middleware.js';
 
@@ -25,5 +25,11 @@ router.post('/register/doctor', validate(schemas.registerDoctor), registerDoctor
  * Get the authenticated user's full profile
  */
 router.get('/me', getMe);
+
+/**
+ * GET /api/auth/patients/search?q=<name>
+ * Doctor searches patients by display name/email.
+ */
+router.get('/patients/search', requireRole('doctor'), searchPatients);
 
 export default router;
