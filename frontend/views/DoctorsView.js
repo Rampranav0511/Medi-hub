@@ -2,12 +2,12 @@
 import api from '../services/api.js';
 import { appState, showToast } from '../services/state.js';
 import { relativeTime } from '../utils/time.js';
-import { getContribColor, buildContribWeeks } from '../utils/contrib.js';
 import { ContribGraph } from '../components/ContribGraph.js';
 
-const { ref, reactive, computed, onMounted } = Vue;
+const { ref, reactive, computed, onMounted, defineComponent } = Vue;
 
-export const DoctorsView = {
+export const DoctorsView = defineComponent({
+  name: 'DoctorsView',
   components: { ContribGraph },
 
   setup() {
@@ -34,8 +34,8 @@ export const DoctorsView = {
         if (filters.sortBy)         params.set('sortBy', filters.sortBy);
         if (filters.minCases)       params.set('minCases', filters.minCases);
         if (filters.conditionTag)   params.set('conditionTag', filters.conditionTag);
-
-        const { doctors: data } = await api.get(`/doctors?${params.toString()}`);
+        const qs = params.toString();
+        const { doctors: data } = await api.get(`/doctors${qs ? '?' + qs : ''}`);
         doctors.value = data || [];
       } catch (e) {
         showToast(e.message, 'error');
@@ -64,9 +64,8 @@ export const DoctorsView = {
       });
     });
 
-    // Open doctor profile — fetches full details + REAL contribution graph from DB
     async function openProfile(doc) {
-      selectedDoctor.value = doc;
+      selectedDoctor.value = { ...doc };
       showProfile.value    = true;
       loadingProfile.value = true;
       try {
@@ -74,10 +73,9 @@ export const DoctorsView = {
           api.get(`/doctors/${doc.uid}`),
           api.get(`/doctors/${doc.uid}/contribution-graph`),
         ]);
-        // Merge real graph data into selected doctor
         selectedDoctor.value = {
-          ...profileRes.doctor,
-          _graphData:    graphRes.contributionGraph || {},   // flat { "YYYY-MM-DD": count }
+          ...(profileRes.doctor || profileRes),
+          _graphData:    graphRes.contributionGraph || {},
           _graphSummary: graphRes.summary || {},
         };
       } catch (e) {
@@ -90,6 +88,7 @@ export const DoctorsView = {
     async function submitEndorse() {
       if (!endorseForm.skill) { showToast('Skill is required', 'error'); return; }
       submittingEndorse.value = true;
+      const skillName = endorseForm.skill;
       try {
         await api.post(`/doctors/${selectedDoctor.value.uid}/endorse`, {
           skill: endorseForm.skill,
@@ -98,7 +97,7 @@ export const DoctorsView = {
         showEndorseModal.value = false;
         endorseForm.skill = '';
         endorseForm.note  = '';
-        showToast(`Endorsed for "${endorseForm.skill || 'skill'}"`);
+        showToast(`Endorsed for "${skillName}"`);
       } catch (e) {
         showToast(e.message, 'error');
       } finally {
@@ -114,8 +113,7 @@ export const DoctorsView = {
     return {
       doctors, filteredDoctors, loading, filters, specializations,
       selectedDoctor, showProfile, showEndorseModal, endorseForm, submittingEndorse,
-      loadingProfile, getContribColor, buildContribWeeks,
-      openProfile, submitEndorse, lastActive, appState,
+      loadingProfile, openProfile, submitEndorse, lastActive, appState,
     };
   },
 
@@ -132,14 +130,14 @@ export const DoctorsView = {
         <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
           <div>
             <label>Specialization</label>
-            <select v-model="filters.specialization" class="input-field text-xs">
+            <select v-model="filters.specialization" @change="loadDoctors" class="input-field text-xs">
               <option value="">All</option>
               <option v-for="s in specializations" :key="s">{{ s }}</option>
             </select>
           </div>
           <div>
             <label>Sort By</label>
-            <select v-model="filters.sortBy" class="input-field text-xs">
+            <select v-model="filters.sortBy" @change="loadDoctors" class="input-field text-xs">
               <option value="totalCasesHandled">Total Cases</option>
               <option value="recordAccuracyScore">Accuracy Score</option>
               <option value="averageResponseTimeHours">Response Time</option>
@@ -160,7 +158,7 @@ export const DoctorsView = {
       <div v-if="loading" class="space-y-3">
         <div v-for="i in 3" :key="i" class="card p-5 animate-pulse">
           <div class="flex gap-4">
-            <div class="w-12 h-12 rounded-full bg-ink-800"></div>
+            <div class="w-12 h-12 rounded-full bg-ink-800 flex-shrink-0"></div>
             <div class="flex-1">
               <div class="h-4 w-1/3 bg-ink-800 rounded mb-2"></div>
               <div class="h-3 w-1/4 bg-ink-800 rounded mb-3"></div>
@@ -172,7 +170,6 @@ export const DoctorsView = {
         </div>
       </div>
 
-      <!-- Doctor cards -->
       <div v-else-if="filteredDoctors.length === 0" class="card p-12 text-center">
         <div class="text-4xl text-ink-800 mb-3">⊙</div>
         <p class="text-ink-500">No doctors found matching filters</p>
@@ -185,7 +182,7 @@ export const DoctorsView = {
           @click="openProfile(doc)">
           <div class="flex items-start gap-4">
             <div class="w-11 h-11 rounded-full bg-sage-900/50 border border-sage-700/30 flex items-center justify-center text-sage-400 text-lg font-serif flex-shrink-0">
-              {{ (doc.displayName || '?')[0] }}
+              {{ ((doc.displayName || '?')[0] || '?').toUpperCase() }}
             </div>
             <div class="flex-1 min-w-0">
               <div class="flex items-start justify-between gap-3">
@@ -236,22 +233,21 @@ export const DoctorsView = {
       <!-- Doctor Profile Modal -->
       <div v-if="showProfile && selectedDoctor" class="modal-backdrop" @click.self="showProfile = false">
         <div class="modal animate-slide-up" style="max-width: 640px">
-          <!-- Header -->
           <div class="flex items-start justify-between mb-6">
             <div class="flex gap-3">
-              <div class="w-14 h-14 rounded-full bg-sage-900/50 border border-sage-700/30 flex items-center justify-center text-sage-400 text-2xl font-serif">
-                {{ (selectedDoctor.displayName || '?')[0] }}
+              <div class="w-14 h-14 rounded-full bg-sage-900/50 border border-sage-700/30 flex items-center justify-center text-sage-400 text-2xl font-serif flex-shrink-0">
+                {{ ((selectedDoctor.displayName || '?')[0] || '?').toUpperCase() }}
               </div>
               <div>
                 <h2 class="serif text-2xl text-ink-100">{{ selectedDoctor.displayName }}</h2>
                 <p class="mono text-xs text-ink-500">{{ selectedDoctor.specialization }}</p>
                 <div class="flex flex-wrap gap-1 mt-1">
                   <span v-for="q in (selectedDoctor.qualifications || [])" :key="q"
-                    class="mono text-xs text-ink-600">{{ q }}</span>
+                    class="mono text-xs text-ink-600 mr-1">{{ q }}</span>
                 </div>
               </div>
             </div>
-            <button @click="showProfile = false" class="text-ink-600 hover:text-ink-300 text-xl flex-shrink-0">×</button>
+            <button @click="showProfile = false" class="text-ink-600 hover:text-ink-300 text-xl flex-shrink-0 ml-4">×</button>
           </div>
 
           <div v-if="loadingProfile" class="space-y-4 animate-pulse">
@@ -262,7 +258,6 @@ export const DoctorsView = {
           </div>
 
           <template v-else>
-            <!-- Stats -->
             <div class="grid grid-cols-4 gap-2 mb-6">
               <div class="stat-card text-center">
                 <div class="mono text-xl text-ink-100 font-medium">{{ selectedDoctor.stats?.totalCasesHandled ?? 0 }}</div>
@@ -282,11 +277,11 @@ export const DoctorsView = {
               </div>
             </div>
 
-            <!-- REAL Contribution Graph from DB -->
+            <!-- Contribution Graph -->
             <div class="mb-6">
               <p class="mono text-xs text-ink-600 mb-2 uppercase tracking-wider">
                 Contribution Activity
-                <span v-if="selectedDoctor._graphSummary?.totalContributions" class="text-ink-700">
+                <span v-if="selectedDoctor._graphSummary?.totalContributions" class="text-ink-700 normal-case ml-1">
                   · {{ selectedDoctor._graphSummary.totalContributions }} total
                 </span>
               </p>
@@ -297,8 +292,7 @@ export const DoctorsView = {
             <div class="mb-6" v-if="Object.keys(selectedDoctor.endorsementCounts || {}).length > 0">
               <p class="mono text-xs text-ink-600 mb-2 uppercase tracking-wider">Peer Endorsements</p>
               <div class="flex flex-wrap gap-2">
-                <div
-                  v-for="(count, skill) in selectedDoctor.endorsementCounts" :key="skill"
+                <div v-for="(count, skill) in selectedDoctor.endorsementCounts" :key="skill"
                   class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-ink-800/50 border border-ink-700">
                   <span class="text-sage-400 mono text-xs font-medium">{{ count }}</span>
                   <span class="text-ink-300 text-xs">{{ skill }}</span>
@@ -323,7 +317,6 @@ export const DoctorsView = {
               </div>
             </div>
 
-            <!-- Actions -->
             <div class="flex gap-2">
               <button
                 v-if="appState.user?.role === 'doctor' && appState.user?.uid !== selectedDoctor.uid"
@@ -367,4 +360,4 @@ export const DoctorsView = {
       </div>
     </div>
   `,
-};
+});

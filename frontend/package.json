@@ -10,12 +10,7 @@
   "devDependencies": {
     "serve": "^13.0.4"
   },
-  "keywords": [
-    "medilocker",
-    "health",
-    "records",
-    "vue3"
-  ],
+  "keywords": ["medilocker", "health", "records", "vue3"],
   "license": "MIT",
   "engines": {
     "node": ">=18.0.0"

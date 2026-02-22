@@ -3,9 +3,10 @@ import api from '../services/api.js';
 import { appState, showToast } from '../services/state.js';
 import { daysLeft } from '../utils/time.js';
 
-const { ref, onMounted } = Vue;
+const { ref, onMounted, defineComponent } = Vue;
 
-export const CollaboratorsView = {
+export const CollaboratorsView = defineComponent({
+  name: 'CollaboratorsView',
   setup() {
     const collaborators = ref([]);
     const loading       = ref(true);
@@ -34,7 +35,7 @@ export const CollaboratorsView = {
     }
 
     async function revoke(collab) {
-      if (!confirm(`Revoke access for ${collab.doctor?.displayName}?`)) return;
+      if (!confirm(`Revoke access for ${collab.doctor?.displayName || 'this doctor'}?`)) return;
       try {
         await api.patch(`/access-requests/${collab.accessRequest.id}/revoke`, {});
         collaborators.value = collaborators.value.filter(c => c !== collab);
@@ -70,22 +71,22 @@ export const CollaboratorsView = {
       </div>
 
       <div v-else class="grid md:grid-cols-2 gap-3">
-        <div v-for="collab in collaborators" :key="collab.doctor?.uid" class="card p-5">
+        <div v-for="collab in collaborators" :key="collab.doctor?.uid || collab.id" class="card p-5">
           <div class="flex items-start justify-between mb-3">
             <div class="flex items-center gap-3">
               <div class="w-10 h-10 rounded-full bg-sage-900/50 border border-sage-700/30 flex items-center justify-center text-sage-400 font-serif">
-                {{ (collab.doctor?.displayName || '?')[0] }}
+                {{ ((collab.doctor?.displayName || '?')[0] || '?').toUpperCase() }}
               </div>
               <div>
-                <h3 class="text-sm font-medium text-ink-100">{{ collab.doctor?.displayName }}</h3>
-                <p class="mono text-xs text-ink-600">{{ collab.doctor?.specialization }}</p>
+                <h3 class="text-sm font-medium text-ink-100">{{ collab.doctor?.displayName || 'Unknown Doctor' }}</h3>
+                <p class="mono text-xs text-ink-600">{{ collab.doctor?.specialization || '—' }}</p>
               </div>
             </div>
             <span class="mono text-xs px-2 py-0.5 rounded border"
               :class="collab.accessRequest?.accessLevel === 'read_write'
                 ? 'border-amber-800/40 text-amber-500 bg-amber-900/10'
                 : 'border-ink-700 text-ink-500'">
-              {{ collab.accessRequest?.accessLevel }}
+              {{ collab.accessRequest?.accessLevel || 'read' }}
             </span>
           </div>
 
@@ -113,4 +114,4 @@ export const CollaboratorsView = {
       </div>
     </div>
   `,
-};
+});

@@ -3,7 +3,7 @@ import api from '../services/api.js';
 import { appState, showToast } from '../services/state.js';
 import { relativeTime, formatBytes } from '../utils/time.js';
 
-const { ref, reactive, onMounted } = Vue;
+const { ref, reactive, onMounted, defineComponent } = Vue;
 
 const RECORD_TYPES = ['prescription','lab_report','xray','discharge_summary','vaccination','imaging','other'];
 
@@ -12,18 +12,19 @@ const TYPE_ICONS = {
   discharge_summary: '⊡', vaccination: '⊕', imaging: '◈', other: '◌',
 };
 
-export const RecordsView = {
+export const RecordsView = defineComponent({
+  name: 'RecordsView',
   setup() {
-    const records         = ref([]);
-    const loading         = ref(true);
-    const showUploadModal = ref(false);
+    const records          = ref([]);
+    const loading          = ref(true);
+    const showUploadModal  = ref(false);
     const showVersionModal = ref(false);
-    const uploading       = ref(false);
-    const loadingVersions = ref(false);
-    const selectedRecord  = ref(null);
-    const versions        = ref([]);
-    const dragOver        = ref(false);
-    const fileInput       = ref(null);
+    const uploading        = ref(false);
+    const loadingVersions  = ref(false);
+    const selectedRecord   = ref(null);
+    const versions         = ref([]);
+    const dragOver         = ref(false);
+    const fileInput        = ref(null);
 
     const uploadForm = reactive({
       file: null, fileName: '', title: '',
@@ -31,7 +32,6 @@ export const RecordsView = {
       tags: '', commitMessage: '',
     });
 
-    // ── Fetch records from backend ─────────────────────────────────────────────
     async function loadRecords() {
       loading.value = true;
       try {
@@ -46,12 +46,11 @@ export const RecordsView = {
 
     onMounted(loadRecords);
 
-    // ── Version History ────────────────────────────────────────────────────────
     async function viewVersions(record) {
-      selectedRecord.value = record;
+      selectedRecord.value   = record;
       showVersionModal.value = true;
-      loadingVersions.value = true;
-      versions.value = [];
+      loadingVersions.value  = true;
+      versions.value         = [];
       try {
         const { versions: data } = await api.get(`/records/${record.id}/versions`);
         versions.value = data || [];
@@ -71,7 +70,6 @@ export const RecordsView = {
       }
     }
 
-    // ── File upload ────────────────────────────────────────────────────────────
     function handleFileChange(e) {
       const f = e.target.files[0];
       if (f) { uploadForm.file = f; uploadForm.fileName = f.name; }
@@ -84,19 +82,19 @@ export const RecordsView = {
     }
 
     async function submitUpload() {
-      if (!uploadForm.file)           { showToast('Please select a file', 'error'); return; }
-      if (!uploadForm.title)          { showToast('Title is required', 'error'); return; }
-      if (!uploadForm.commitMessage)  { showToast('Commit message is required', 'error'); return; }
+      if (!uploadForm.file)          { showToast('Please select a file', 'error'); return; }
+      if (!uploadForm.title)         { showToast('Title is required', 'error'); return; }
+      if (!uploadForm.commitMessage) { showToast('Commit message is required', 'error'); return; }
 
       uploading.value = true;
       try {
         const fd = new FormData();
-        fd.append('file', uploadForm.file);
-        fd.append('title', uploadForm.title);
-        fd.append('recordType', uploadForm.recordType);
+        fd.append('file',          uploadForm.file);
+        fd.append('title',         uploadForm.title);
+        fd.append('recordType',    uploadForm.recordType);
         fd.append('commitMessage', uploadForm.commitMessage);
-        fd.append('issuedBy', uploadForm.issuedBy);
-        fd.append('issuedDate', uploadForm.issuedDate);
+        fd.append('issuedBy',      uploadForm.issuedBy);
+        fd.append('issuedDate',    uploadForm.issuedDate);
         if (uploadForm.tags) {
           uploadForm.tags.split(',').map(t => t.trim()).filter(Boolean)
             .forEach(t => fd.append('tags[]', t));
@@ -105,8 +103,6 @@ export const RecordsView = {
         const { record } = await api.postFile('/records', fd);
         records.value.unshift(record);
         showUploadModal.value = false;
-
-        // Reset form
         Object.assign(uploadForm, {
           file: null, fileName: '', title: '', recordType: 'lab_report',
           issuedDate: '', issuedBy: '', tags: '', commitMessage: '',
@@ -156,7 +152,7 @@ export const RecordsView = {
       <div v-if="loading" class="space-y-3">
         <div v-for="i in 4" :key="i" class="card p-5 animate-pulse">
           <div class="flex gap-4">
-            <div class="w-10 h-10 rounded-lg bg-ink-800"></div>
+            <div class="w-10 h-10 rounded-lg bg-ink-800 flex-shrink-0"></div>
             <div class="flex-1">
               <div class="h-4 w-1/3 bg-ink-800 rounded mb-2"></div>
               <div class="h-3 w-1/2 bg-ink-800 rounded mb-3"></div>
@@ -240,7 +236,7 @@ export const RecordsView = {
               @dragover.prevent="dragOver = true"
               @dragleave="dragOver = false"
               @drop.prevent="handleDrop"
-              @click="$refs.fileInput.click()">
+              @click="fileInput.click()">
               <input ref="fileInput" type="file" class="hidden"
                 accept=".pdf,.jpg,.jpeg,.png,.webp,.dcm"
                 @change="handleFileChange" />
@@ -284,7 +280,7 @@ export const RecordsView = {
             </div>
 
             <div>
-              <label>Commit Message * <span class="text-ink-600 normal-case">(describe this record)</span></label>
+              <label>Commit Message *</label>
               <input v-model="uploadForm.commitMessage" class="input-field mono text-xs"
                 placeholder="Initial upload — baseline CBC before medication" />
             </div>
@@ -354,4 +350,4 @@ export const RecordsView = {
       </div>
     </div>
   `,
-};
+});

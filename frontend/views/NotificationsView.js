@@ -3,7 +3,7 @@ import api from '../services/api.js';
 import { appState, showToast } from '../services/state.js';
 import { relativeTime } from '../utils/time.js';
 
-const { ref, onMounted } = Vue;
+const { ref, onMounted, defineComponent } = Vue;
 
 const TYPE_ICON = {
   access_request:          '⊘',
@@ -21,16 +21,17 @@ const TYPE_COLOR = {
   record_updated:          'text-ink-400',
 };
 
-export const NotificationsView = {
+export const NotificationsView = defineComponent({
+  name: 'NotificationsView',
   setup() {
     const notifications = ref([]);
     const loading       = ref(true);
 
     onMounted(async () => {
       try {
-        const { notifications: data, unreadCount } = await api.get('/notifications');
-        notifications.value = data || [];
-        appState.unreadCount = unreadCount ?? notifications.value.filter(n => !n.isRead).length;
+        const data = await api.get('/notifications');
+        notifications.value    = data.notifications || [];
+        appState.unreadCount   = data.unreadCount ?? notifications.value.filter(n => !n.isRead).length;
       } catch (e) {
         showToast(e.message, 'error');
       } finally {
@@ -40,13 +41,12 @@ export const NotificationsView = {
 
     async function markRead(n) {
       if (n.isRead) return;
+      n.isRead = true; // optimistic
+      appState.unreadCount = Math.max(0, appState.unreadCount - 1);
       try {
         await api.patch(`/notifications/${n.id}/read`, {});
-        n.isRead = true;
-        appState.unreadCount = Math.max(0, appState.unreadCount - 1);
       } catch {
-        // Silent — UX already updated
-        n.isRead = true;
+        // silent — UI already updated
       }
     }
 
@@ -64,7 +64,7 @@ export const NotificationsView = {
     const typeIcon  = (t) => TYPE_ICON[t]  || '◌';
     const typeColor = (t) => TYPE_COLOR[t] || 'text-ink-400';
 
-    return { notifications, loading, markRead, markAllRead, relativeTime, typeIcon, typeColor };
+    return { notifications, loading, markRead, markAllRead, relativeTime, typeIcon, typeColor, appState };
   },
 
   template: `
@@ -73,6 +73,9 @@ export const NotificationsView = {
         <div>
           <p class="mono text-ink-500 text-xs mb-1">— Inbox</p>
           <h1 class="serif text-3xl text-ink-100">Notifications</h1>
+          <p v-if="appState.unreadCount > 0" class="text-xs text-sage-500 mono mt-1">
+            {{ appState.unreadCount }} unread
+          </p>
         </div>
         <button @click="markAllRead" class="btn-ghost text-xs mono">✓ Mark all read</button>
       </div>
@@ -124,4 +127,4 @@ export const NotificationsView = {
       </div>
     </div>
   `,
-};
+});

@@ -1,16 +1,17 @@
 // ─── Sidebar Component ────────────────────────────────────────────────────────
 import { appState, clearAuth } from '../services/state.js';
 
-const { computed } = Vue;
-const { useRouter, useRoute } = VueRouter;
+const { computed, defineComponent } = Vue;
+const { useRouter, useRoute, RouterLink } = VueRouter;
 
-export const Sidebar = {
+export const Sidebar = defineComponent({
+  name: 'Sidebar',
+  components: { RouterLink },
   setup() {
     const router = useRouter();
     const route  = useRoute();
 
     function logout() {
-      // Sign out of Firebase if available
       if (window._firebaseAuth?.currentUser) {
         window._firebaseAuth.signOut().catch(() => {});
       }
@@ -52,8 +53,8 @@ export const Sidebar = {
         <router-link
           v-for="item in navItems" :key="item.path"
           :to="item.path"
-          class="nav-link flex items-center gap-2.5 group"
-          :class="{ active: route.path === item.path }">
+          class="nav-link group"
+          :class="{ 'text-sage-400 bg-sage-900/10': route.path === item.path }">
           <span class="text-base leading-none">{{ item.icon }}</span>
           <span>{{ item.label }}</span>
           <span
@@ -66,18 +67,18 @@ export const Sidebar = {
 
       <div class="mt-auto pt-4 border-t border-ink-800">
         <div class="flex items-center gap-2 px-2 mb-3">
-          <div class="w-7 h-7 rounded-full bg-sage-900 border border-sage-700/50 flex items-center justify-center text-sage-400 text-xs font-mono">
-            {{ (appState.user?.displayName || '?')[0].toUpperCase() }}
+          <div class="w-7 h-7 rounded-full bg-sage-900 border border-sage-700/50 flex items-center justify-center text-sage-400 text-xs font-mono flex-shrink-0">
+            {{ ((appState.user?.displayName || '?')[0] || '?').toUpperCase() }}
           </div>
           <div class="flex-1 min-w-0">
             <div class="text-xs text-ink-200 truncate font-medium">{{ appState.user?.displayName }}</div>
             <div class="text-[10px] text-ink-500 mono truncate">{{ appState.user?.email }}</div>
           </div>
         </div>
-        <button @click="logout" class="nav-link w-full text-left flex items-center gap-2 text-rust-400 hover:text-rust-400">
+        <button @click="logout" class="nav-link w-full text-left text-rust-400 hover:text-rust-400 hover:bg-red-950/20">
           <span>⊗</span> Sign Out
         </button>
       </div>
     </aside>
   `,
-};
+});

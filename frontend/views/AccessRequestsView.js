@@ -3,18 +3,19 @@ import api from '../services/api.js';
 import { appState, showToast } from '../services/state.js';
 import { relativeTime, daysUntil } from '../utils/time.js';
 
-const { ref, reactive, onMounted } = Vue;
+const { ref, reactive, onMounted, defineComponent } = Vue;
 
 const RECORD_TYPES = ['prescription','lab_report','xray','discharge_summary','vaccination','imaging','other','all'];
 
-export const AccessRequestsView = {
+export const AccessRequestsView = defineComponent({
+  name: 'AccessRequestsView',
   setup() {
-    const requests         = ref([]);
-    const loading          = ref(true);
-    const activeTab        = ref(appState.user?.role === 'patient' ? 'incoming' : 'outgoing');
+    const requests          = ref([]);
+    const loading           = ref(true);
+    const activeTab         = ref(appState.user?.role === 'patient' ? 'incoming' : 'outgoing');
     const showRequestModal  = ref(false);
-    const submitting       = ref(false);
-    const isPatient        = appState.user?.role === 'patient';
+    const submitting        = ref(false);
+    const isPatient         = appState.user?.role === 'patient';
 
     const requestForm = reactive({
       patientId: '', reason: '',
@@ -36,16 +37,11 @@ export const AccessRequestsView = {
 
     onMounted(loadRequests);
 
-    const filteredRequests = () => {
-      if (activeTab.value === 'all') return requests.value;
-      return requests.value;
-    };
-
     async function respond(req, approved) {
       try {
         await api.patch(`/access-requests/${req.id}/respond`, { approved });
         req.status = approved ? 'approved' : 'denied';
-        if (approved) req.expiresAt = { seconds: Date.now() / 1000 + req.expiryDays * 86400 };
+        if (approved) req.expiresAt = { seconds: Date.now() / 1000 + (req.expiryDays || 30) * 86400 };
         showToast(approved ? 'Access approved' : 'Request denied');
       } catch (e) {
         showToast(e.message, 'error');
@@ -93,7 +89,7 @@ export const AccessRequestsView = {
 
     return {
       requests, loading, activeTab, showRequestModal, submitting, requestForm, RECORD_TYPES,
-      isPatient, filteredRequests, relativeTime, daysUntil, respond, revoke, submitRequest, toggleRecordType,
+      isPatient, relativeTime, daysUntil, respond, revoke, submitRequest, toggleRecordType,
     };
   },
 
@@ -109,10 +105,10 @@ export const AccessRequestsView = {
         </button>
       </div>
 
-      <!-- Tabs -->
-      <div class="flex gap-1 p-1 bg-ink-900 rounded-lg mb-6 w-fit">
+      <!-- Tabs (patient only) -->
+      <div v-if="isPatient" class="flex gap-1 p-1 bg-ink-900 rounded-lg mb-6 w-fit">
         <button
-          v-for="tab in (isPatient ? ['incoming','all'] : ['outgoing'])"
+          v-for="tab in ['incoming','all']"
           :key="tab" @click="activeTab = tab"
           class="px-4 py-1.5 rounded-md text-xs mono transition-all"
           :class="activeTab === tab ? 'bg-ink-700 text-ink-100' : 'text-ink-500 hover:text-ink-300'">
@@ -171,7 +167,7 @@ export const AccessRequestsView = {
           </div>
 
           <div class="flex flex-wrap gap-1.5 mb-4">
-            <span v-for="t in req.requestedRecordTypes" :key="t"
+            <span v-for="t in (req.requestedRecordTypes || [])" :key="t"
               class="tag-badge text-ink-400 border-ink-700 bg-ink-800/50">
               {{ t.replace(/_/g,' ') }}
             </span>
@@ -246,4 +242,4 @@ export const AccessRequestsView = {
       </div>
     </div>
   `,
-};
+});

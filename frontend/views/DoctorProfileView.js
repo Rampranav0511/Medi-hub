@@ -4,9 +4,10 @@ import api from '../services/api.js';
 import { appState, showToast } from '../services/state.js';
 import { ContribGraph } from '../components/ContribGraph.js';
 
-const { ref, onMounted } = Vue;
+const { ref, onMounted, defineComponent } = Vue;
 
-export const DoctorProfileView = {
+export const DoctorProfileView = defineComponent({
+  name: 'DoctorProfileView',
   components: { ContribGraph },
 
   setup() {
@@ -16,12 +17,16 @@ export const DoctorProfileView = {
     const graphSummary = ref({});
 
     onMounted(async () => {
+      if (!appState.user?.uid) {
+        loading.value = false;
+        return;
+      }
       try {
         const [profileRes, graphRes] = await Promise.all([
           api.get(`/doctors/${appState.user.uid}`),
           api.get(`/doctors/${appState.user.uid}/contribution-graph`),
         ]);
-        profile.value      = profileRes.doctor;
+        profile.value      = profileRes.doctor || profileRes;
         graphData.value    = graphRes.contributionGraph || {};
         graphSummary.value = graphRes.summary || {};
       } catch (e) {
@@ -46,7 +51,7 @@ export const DoctorProfileView = {
       <div v-if="loading" class="animate-pulse space-y-4">
         <div class="card p-6">
           <div class="flex gap-4">
-            <div class="w-16 h-16 rounded-full bg-ink-800"></div>
+            <div class="w-16 h-16 rounded-full bg-ink-800 flex-shrink-0"></div>
             <div class="flex-1">
               <div class="h-5 w-1/3 bg-ink-800 rounded mb-2"></div>
               <div class="h-3 w-1/4 bg-ink-800 rounded"></div>
@@ -63,8 +68,8 @@ export const DoctorProfileView = {
         <!-- Profile header -->
         <div class="card p-6 mb-4">
           <div class="flex items-start gap-4">
-            <div class="w-16 h-16 rounded-full bg-sage-900/50 border border-sage-700/30 flex items-center justify-center text-sage-400 text-3xl font-serif">
-              {{ (profile.displayName || '?')[0] }}
+            <div class="w-16 h-16 rounded-full bg-sage-900/50 border border-sage-700/30 flex items-center justify-center text-sage-400 text-3xl font-serif flex-shrink-0">
+              {{ ((profile.displayName || '?')[0] || '?').toUpperCase() }}
             </div>
             <div class="flex-1">
               <div class="flex items-center gap-2 mb-1">
@@ -106,7 +111,7 @@ export const DoctorProfileView = {
           </div>
         </div>
 
-        <!-- REAL Contribution Graph from DB -->
+        <!-- Contribution Graph -->
         <div class="card p-5 mb-4">
           <div class="flex items-center justify-between mb-3">
             <p class="mono text-xs text-ink-600 uppercase tracking-wider">
@@ -128,8 +133,7 @@ export const DoctorProfileView = {
         <div class="card p-5 mb-4" v-if="Object.keys(profile.endorsementCounts || {}).length > 0">
           <p class="mono text-xs text-ink-600 uppercase tracking-wider mb-3">Peer Endorsements</p>
           <div class="flex flex-wrap gap-2">
-            <div
-              v-for="(count, skill) in profile.endorsementCounts" :key="skill"
+            <div v-for="(count, skill) in profile.endorsementCounts" :key="skill"
               class="flex items-center gap-2 px-3 py-2 rounded-lg bg-ink-800/50 border border-ink-700">
               <span class="text-sage-400 mono text-sm font-medium">{{ count }}</span>
               <span class="text-ink-300 text-sm">{{ skill }}</span>
@@ -154,4 +158,4 @@ export const DoctorProfileView = {
       </div>
     </div>
   `,
-};
+});

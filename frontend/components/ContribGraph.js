@@ -4,9 +4,10 @@
 
 import { getContribColor, buildContribWeeks } from '../utils/contrib.js';
 
-const { computed } = Vue;
+const { computed, defineComponent } = Vue;
 
-export const ContribGraph = {
+export const ContribGraph = defineComponent({
+  name: 'ContribGraph',
   props: {
     graphData: { type: Object, default: () => ({}) },
   },
@@ -18,7 +19,7 @@ export const ContribGraph = {
   template: `
     <div>
       <div class="flex gap-1 overflow-x-auto pb-2">
-        <div v-for="week in weeks" :key="week[0].key" class="flex flex-col gap-1">
+        <div v-for="(week, wi) in weeks" :key="wi" class="flex flex-col gap-1">
           <div
             v-for="day in week" :key="day.key"
             class="contribution-cell"
@@ -35,4 +36,4 @@ export const ContribGraph = {
       </div>
     </div>
   `,
-};
+});

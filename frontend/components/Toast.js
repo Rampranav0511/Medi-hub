@@ -1,7 +1,10 @@
 // ─── Toast Component ──────────────────────────────────────────────────────────
 import { appState } from '../services/state.js';
 
-export const Toast = {
+const { defineComponent } = Vue;
+
+export const Toast = defineComponent({
+  name: 'Toast',
   setup() { return { appState }; },
   template: `
     <transition name="slide-toast">
@@ -15,4 +18,4 @@ export const Toast = {
       </div>
     </transition>
   `,
-};
+});

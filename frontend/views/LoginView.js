@@ -1,11 +1,23 @@
 // ─── Login / Register View ────────────────────────────────────────────────────
+// IMPORTANT: The backend uses Firebase Admin SDK's verifyIdToken() to authenticate
+// ALL requests. This means every API call MUST carry a real Firebase ID token.
+//
+// Flow:
+//   1. Sign in / sign up with Firebase client SDK → get Firebase ID token
+//   2. Send that token as "Bearer <token>" on every API call
+//   3. Backend verifies it with auth.verifyIdToken()
+//
+// The fallback demo path below uses Firebase email/password auth —
+// it requires Firebase to be configured in index.html.
+
 import api from '../services/api.js';
 import { appState, setAuth, showToast } from '../services/state.js';
 
-const { ref, reactive } = Vue;
+const { ref, reactive, defineComponent } = Vue;
 const { useRouter } = VueRouter;
 
-export const LoginView = {
+export const LoginView = defineComponent({
+  name: 'LoginView',
   setup() {
     const router  = useRouter();
     const mode    = ref('login');
@@ -20,42 +32,57 @@ export const LoginView = {
       qualifications: '', yearsOfExperience: 0,
     });
 
+    // ── Check whether Firebase client SDK is available ─────────────────────────
+    function firebaseReady() {
+      return !!(window._firebaseAuth && window._firebaseSignIn && window._firebaseSignUp);
+    }
+
     async function handleSubmit() {
+      if (!form.email || !form.password) {
+        error.value = 'Email and password are required.';
+        return;
+      }
+
+      if (!firebaseReady()) {
+        error.value =
+          'Firebase is not configured. ' +
+          'Please uncomment the Firebase SDK block in index.html and add your project config.';
+        return;
+      }
+
       loading.value = true;
       error.value   = '';
-      try {
-        let token;
-        let firebaseUser = null;
 
-        if (window._firebaseAuth && window._firebaseSignIn) {
-          // ── Real Firebase path ─────────────────────────────────────────────
-          let cred;
-          if (mode.value === 'login') {
-            cred = await window._firebaseSignIn(
-              window._firebaseAuth, form.email, form.password
-            );
-          } else {
-            cred = await window._firebaseSignUp(
-              window._firebaseAuth, form.email, form.password
-            );
-          }
+      try {
+        // ── Step 1: Authenticate with Firebase to get a real ID token ──────────
+        let firebaseUser;
+
+        if (mode.value === 'login') {
+          const cred = await window._firebaseSignIn(
+            window._firebaseAuth, form.email, form.password
+          );
           firebaseUser = cred.user;
-          token = await firebaseUser.getIdToken();
         } else {
-          // ── Demo path (no Firebase SDK) ────────────────────────────────────
-          // Falls back to direct username/password login via backend.
-          // Remove this block once Firebase is configured.
-          const loginRes = await fetch('http://localhost:3000/api/auth/login', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email: form.email, password: form.password }),
-          });
-          const loginJson = await loginRes.json();
-          if (!loginRes.ok) throw new Error(loginJson.error || 'Login failed');
-          token = loginJson.token;
+          // Register: create Firebase account first
+          const cred = await window._firebaseSignUp(
+            window._firebaseAuth, form.email, form.password
+          );
+          firebaseUser = cred.user;
         }
 
-        // ── Register profile on backend (sign-up only) ─────────────────────
+        // Force-refresh so we always have a fresh token
+        const idToken = await firebaseUser.getIdToken(true);
+
+        if (!idToken || idToken.trim() === '') {
+          throw new Error('Firebase returned an empty ID token.');
+        }
+
+        // ── Step 2: Store token immediately so api.js can use it ───────────────
+        const cleanToken = idToken.trim();
+        window.appState.token = cleanToken;
+        localStorage.setItem('ml_token', cleanToken);
+
+        // ── Step 3: Create Firestore profile on backend (register only) ────────
         if (mode.value === 'register') {
           const endpoint = role.value === 'patient'
             ? '/auth/register/patient'
@@ -76,44 +103,52 @@ export const LoginView = {
                 yearsOfExperience:  Number(form.yearsOfExperience),
               };
 
-          // Store token temporarily so api.js can send it
-          window.appState.token = token;
           await api.post(endpoint, body);
         }
 
-        // ── Fetch authoritative user profile from backend ──────────────────
-        window.appState.token = token;
-        const { user, profile } = await api.get('/auth/me');
-        setAuth(token, { ...user, ...profile });
+        // ── Step 4: Fetch full user profile from Firestore via backend ─────────
+        const meRes = await api.get('/auth/me');
+        const user    = meRes.user    || {};
+        const profile = meRes.profile || {};
+
+        if (!profile.role) {
+          // Profile doc doesn't exist yet (first login before register completes)
+          throw new Error('User profile not found. Please complete registration first.');
+        }
+
+        setAuth(cleanToken, { uid: firebaseUser.uid, email: firebaseUser.email, ...user, ...profile });
         showToast('Welcome to Medilocker!');
         router.push('/dashboard');
 
       } catch (e) {
-        // Translate Firebase auth error codes into readable messages
-        const msg = e.code
-          ? ({ 
-              'auth/wrong-password':    'Incorrect password.',
-              'auth/user-not-found':    'No account with that email.',
-              'auth/email-already-in-use': 'Email already registered.',
-              'auth/invalid-email':     'Invalid email address.',
-              'auth/weak-password':     'Password must be at least 6 characters.',
-            }[e.code] || e.message)
-          : e.message;
-        error.value = msg;
+        // Map Firebase error codes → user-friendly messages
+        const firebaseErrors = {
+          'auth/wrong-password':       'Incorrect password.',
+          'auth/user-not-found':       'No account with that email.',
+          'auth/email-already-in-use': 'Email already registered. Please sign in instead.',
+          'auth/invalid-email':        'Invalid email address.',
+          'auth/weak-password':        'Password must be at least 6 characters.',
+          'auth/invalid-credential':   'Incorrect email or password.',
+          'auth/too-many-requests':    'Too many failed attempts. Please try again later.',
+          'auth/network-request-failed': 'Network error. Check your connection.',
+          'auth/user-disabled':        'This account has been disabled.',
+        };
+        error.value = e.code ? (firebaseErrors[e.code] || e.message) : e.message;
       } finally {
         loading.value = false;
       }
     }
 
     function demoLogin(r) {
-      role.value           = r;
-      form.email           = r === 'doctor' ? 'dr.nair@demo.health' : 'patient@demo.health';
-      form.password        = 'demo123';
-      form.displayName     = r === 'doctor' ? 'Dr. Meera Nair' : 'Aarav Shah';
+      mode.value       = 'login';
+      role.value       = r;
+      form.email       = r === 'doctor' ? 'dr.nair@demo.health' : 'patient@demo.health';
+      form.password    = 'demo123';
+      form.displayName = r === 'doctor' ? 'Dr. Meera Nair' : 'Aarav Shah';
       handleSubmit();
     }
 
-    return { mode, role, loading, error, form, handleSubmit, demoLogin };
+    return { mode, role, loading, error, form, handleSubmit, demoLogin, firebaseReady };
   },
 
   template: `
@@ -132,10 +167,19 @@ export const LoginView = {
           <p class="text-ink-500 text-sm mono">Secure · Versioned · Transparent</p>
         </div>
 
-        <!-- Demo buttons -->
-        <div class="flex gap-2 mb-6">
-          <button @click="demoLogin('patient')" class="btn-ghost flex-1 text-xs mono">→ Demo as Patient</button>
-          <button @click="demoLogin('doctor')"  class="btn-ghost flex-1 text-xs mono">→ Demo as Doctor</button>
+        <!-- Firebase not configured warning -->
+        <div v-if="!firebaseReady()" class="mb-4 px-4 py-3 rounded-lg bg-amber-950/50 border border-amber-800/40 text-amber-400 text-xs mono">
+          ⚠ Firebase SDK not configured. Uncomment the Firebase block in <span class="text-amber-300">index.html</span> and add your project credentials to enable login.
+        </div>
+
+        <!-- Demo buttons (only shown when Firebase is ready) -->
+        <div v-if="firebaseReady()" class="flex gap-2 mb-6">
+          <button @click="demoLogin('patient')" :disabled="loading" class="btn-ghost flex-1 text-xs mono">
+            → Demo as Patient
+          </button>
+          <button @click="demoLogin('doctor')" :disabled="loading" class="btn-ghost flex-1 text-xs mono">
+            → Demo as Doctor
+          </button>
         </div>
 
         <div class="card p-6">
@@ -143,7 +187,7 @@ export const LoginView = {
           <div class="flex gap-1 p-1 bg-ink-900 rounded-lg mb-6">
             <button
               v-for="m in ['login','register']" :key="m"
-              @click="mode = m"
+              @click="mode = m; error = ''"
               class="flex-1 py-1.5 rounded-md text-xs mono transition-all"
               :class="mode === m ? 'bg-ink-700 text-ink-100' : 'text-ink-500 hover:text-ink-300'">
               {{ m === 'login' ? 'Sign In' : 'Register' }}
@@ -167,19 +211,21 @@ export const LoginView = {
             {{ error }}
           </div>
 
-          <form @submit.prevent="handleSubmit" class="space-y-4">
+          <div class="space-y-4">
             <div v-if="mode === 'register'">
               <label>Full Name</label>
               <input v-model="form.displayName" type="text" class="input-field"
-                :placeholder="role === 'doctor' ? 'Dr. Meera Nair' : 'Aarav Shah'" required />
+                :placeholder="role === 'doctor' ? 'Dr. Meera Nair' : 'Aarav Shah'" />
             </div>
             <div>
               <label>Email</label>
-              <input v-model="form.email" type="email" class="input-field" placeholder="you@example.com" required />
+              <input v-model="form.email" type="email" class="input-field"
+                placeholder="you@example.com" @keyup.enter="handleSubmit" />
             </div>
             <div>
               <label>Password</label>
-              <input v-model="form.password" type="password" class="input-field" placeholder="••••••••" required />
+              <input v-model="form.password" type="password" class="input-field"
+                placeholder="••••••••" @keyup.enter="handleSubmit" />
             </div>
 
             <!-- Patient fields -->
@@ -227,11 +273,24 @@ export const LoginView = {
               </div>
             </template>
 
-            <button type="submit" class="btn-primary w-full mt-2" :disabled="loading">
+            <button @click="handleSubmit" class="btn-primary w-full mt-2"
+              :disabled="loading || !firebaseReady()">
               <span v-if="loading" class="mono text-xs">◌ Processing...</span>
+              <span v-else-if="!firebaseReady()" class="mono text-xs">Firebase not configured</span>
               <span v-else>{{ mode === 'login' ? 'Sign In →' : 'Create Account →' }}</span>
             </button>
-          </form>
+          </div>
+        </div>
+
+        <!-- Setup hint -->
+        <div v-if="!firebaseReady()" class="mt-4 card p-4">
+          <p class="mono text-xs text-ink-600 mb-2 uppercase tracking-wider">Setup Required</p>
+          <ol class="text-xs text-ink-500 space-y-1.5">
+            <li class="flex gap-2"><span class="text-sage-600 mono">1.</span> Go to <a href="https://console.firebase.google.com" target="_blank" class="text-sage-500 underline">console.firebase.google.com</a></li>
+            <li class="flex gap-2"><span class="text-sage-600 mono">2.</span> Enable <strong class="text-ink-400">Authentication → Email/Password</strong></li>
+            <li class="flex gap-2"><span class="text-sage-600 mono">3.</span> Copy your project config</li>
+            <li class="flex gap-2"><span class="text-sage-600 mono">4.</span> Uncomment the Firebase block in <span class="text-ink-300 mono">index.html</span> and paste your config</li>
+          </ol>
         </div>
 
         <p class="text-center text-ink-600 text-xs mt-6 mono">
@@ -240,4 +299,4 @@ export const LoginView = {
       </div>
     </div>
   `,
-};
+});
