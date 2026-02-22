@@ -34,7 +34,11 @@ export const LoginView = defineComponent({
 
     // ── Check whether Firebase client SDK is available ─────────────────────────
     function firebaseReady() {
-      return !!(window._firebaseAuth && window._firebaseSignIn && window._firebaseSignUp);
+      const hasCore = !!(window._firebaseAuth && window._firebaseSignIn);
+      if (mode.value === 'register') {
+        return hasCore && !!window._firebaseSignUp;
+      }
+      return hasCore;
     }
 
     async function handleSubmit() {
@@ -44,9 +48,9 @@ export const LoginView = defineComponent({
       }
 
       if (!firebaseReady()) {
-        error.value =
-          'Firebase is not configured. ' +
-          'Please uncomment the Firebase SDK block in index.html and add your project config.';
+        error.value = mode.value === 'register'
+          ? 'Firebase register SDK is not configured. Please expose window._firebaseSignUp in index.html.'
+          : 'Firebase login SDK is not configured. Please expose window._firebaseAuth and window._firebaseSignIn in index.html.';
         return;
       }
 
@@ -112,7 +116,12 @@ export const LoginView = defineComponent({
         const profile = meRes.profile || {};
 
         if (!profile.role) {
-          // Profile doc doesn't exist yet (first login before register completes)
+          // Firebase account exists but backend profile is missing.
+          if (mode.value === 'login') {
+            mode.value = 'register';
+            error.value = 'Your account exists, but your profile is incomplete. Please finish registration.';
+            return;
+          }
           throw new Error('User profile not found. Please complete registration first.');
         }
 
@@ -148,7 +157,13 @@ export const LoginView = defineComponent({
       handleSubmit();
     }
 
-    return { mode, role, loading, error, form, handleSubmit, demoLogin, firebaseReady };
+    function firebaseHint() {
+      return mode.value === 'register'
+        ? '⚠ Firebase register SDK not configured. Expose window._firebaseSignUp in index.html to enable registration.'
+        : '⚠ Firebase login SDK not configured. Expose window._firebaseAuth and window._firebaseSignIn in index.html to enable login.';
+    }
+
+    return { mode, role, loading, error, form, handleSubmit, demoLogin, firebaseReady, firebaseHint };
   },
 
   template: `
@@ -169,7 +184,7 @@ export const LoginView = defineComponent({
 
         <!-- Firebase not configured warning -->
         <div v-if="!firebaseReady()" class="mb-4 px-4 py-3 rounded-lg bg-amber-950/50 border border-amber-800/40 text-amber-400 text-xs mono">
-          ⚠ Firebase SDK not configured. Uncomment the Firebase block in <span class="text-amber-300">index.html</span> and add your project credentials to enable login.
+          {{ firebaseHint() }}
         </div>
 
         <!-- Demo buttons (only shown when Firebase is ready) -->
